@@ -59,7 +59,18 @@ func run(cmd *cobra.Command, args []string) error {
 	dim := color.New(color.FgHiBlack)
 
 	showCommand := verbose || dryRun || result.Intent == ai.IntentExecute
-	if showCommand {
+	if result.Intent == ai.IntentWorkflow && len(result.Steps) > 0 {
+		// Show the full workflow plan.
+		yellow := color.New(color.FgYellow, color.Bold)
+		yellow.Fprintf(os.Stderr, "\n  📋 Workflow (%d steps):\n\n", len(result.Steps))
+		for i, step := range result.Steps {
+			cyan.Fprintf(os.Stderr, "  %d. %s\n", i+1, step.Command)
+			if step.Explanation != "" {
+				dim.Fprintf(os.Stderr, "     %s\n", step.Explanation)
+			}
+		}
+		fmt.Fprintln(os.Stderr)
+	} else if showCommand {
 		cyan.Fprintf(os.Stderr, "\n  → %s\n", result.Command)
 		if result.Explanation != "" {
 			dim.Fprintf(os.Stderr, "  %s\n", result.Explanation)
@@ -69,6 +80,11 @@ func run(cmd *cobra.Command, args []string) error {
 
 	if dryRun {
 		return nil
+	}
+
+	// Workflow intent — multi-step pipeline.
+	if result.Intent == ai.IntentWorkflow && len(result.Steps) > 0 {
+		return runWorkflow(cmd, client, result, prompt)
 	}
 
 	// Only confirm on execute (state-changing) commands.
@@ -160,4 +176,60 @@ func readStdin() string {
 		s = s[:4000] + "\n... (truncated)"
 	}
 	return s
+}
+
+// runWorkflow executes a multi-step pipeline, confirming once then running each step sequentially.
+func runWorkflow(cmd *cobra.Command, client *ai.Client, result *ai.Result, prompt string) error {
+	green := color.New(color.FgGreen)
+	red := color.New(color.FgRed)
+	cyan := color.New(color.FgCyan, color.Bold)
+	dim := color.New(color.FgHiBlack)
+
+	if !yolo {
+		yellow := color.New(color.FgYellow)
+		yellow.Fprint(os.Stderr, "  Run all? [y/N] ")
+		var response string
+		fmt.Scanln(&response)
+		response = strings.TrimSpace(strings.ToLower(response))
+		if response != "y" && response != "yes" {
+			fmt.Fprintln(os.Stderr, "Aborted.")
+			return nil
+		}
+		fmt.Fprintln(os.Stderr)
+	}
+
+	var allOutput strings.Builder
+	for i, step := range result.Steps {
+		label := fmt.Sprintf("Step %d/%d", i+1, len(result.Steps))
+		sp := ui.NewSpinner(label + ": " + step.Command)
+		sp.Start()
+		output, err := executor.Run(step.Command)
+		sp.Stop()
+
+		_ = history.Save(history.Entry{
+			Prompt:  prompt,
+			Command: step.Command,
+			Output:  output,
+			Success: err == nil,
+		})
+
+		if err != nil {
+			red.Fprintf(os.Stderr, "  ✗ Step %d: %s\n", i+1, step.Command)
+			dim.Fprintf(os.Stderr, "    %v\n", err)
+			if output != "" {
+				dim.Fprintf(os.Stderr, "    %s\n", strings.TrimSpace(output))
+			}
+			fmt.Fprintln(os.Stderr)
+			red.Fprintf(os.Stderr, "  Workflow stopped at step %d.\n\n", i+1)
+			return nil
+		}
+
+		cyan.Fprintf(os.Stderr, "  ✓ Step %d: ", i+1)
+		green.Fprintf(os.Stderr, "%s\n", step.Command)
+		allOutput.WriteString(output)
+	}
+
+	fmt.Fprintln(os.Stderr)
+	green.Fprintf(os.Stderr, "  ✓ All %d steps completed.\n\n", len(result.Steps))
+	return nil
 }

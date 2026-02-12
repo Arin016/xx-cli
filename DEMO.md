@@ -91,7 +91,28 @@ git log --oneline -20 | xx summarize recent changes
 cat package.json | xx what dependencies does this use
 ```
 
-## 8. Interactive Chat Mode
+## 8. Multi-Step Workflows
+
+`xx` can break complex tasks into step-by-step pipelines:
+
+```bash
+xx stage everything commit with a good message and push
+# Shows:
+#   📋 Workflow (3 steps):
+#   1. git add -A
+#   2. git commit -m "feat: meaningful message based on your actual changes"
+#   3. git push origin main
+#   Run all? [y/N]
+
+xx clean build and run tests
+# → go clean → go build → go test ./...
+
+xx create a new branch called feature-login and switch to it
+```
+
+`xx` reads your git context (branch, diff, recent commits) to generate accurate commands and meaningful commit messages.
+
+## 9. Interactive Chat Mode
 
 Start a conversation — context carries over between messages:
 
@@ -107,7 +128,7 @@ you → what's the difference between kill and kill -9
 you → bye
 ```
 
-## 9. Flags
+## 10. Flags
 
 ```bash
 xx --dry-run delete all node_modules folders    # See command without running
@@ -115,7 +136,7 @@ xx --yolo show me disk usage                    # Skip confirmation
 xx -v is chrome running                         # Show the underlying command
 ```
 
-## 10. History & Config
+## 11. History & Config
 
 ```bash
 xx history                          # See past commands
@@ -137,5 +158,7 @@ For the best impression, run in this order:
 5. `xx run tests` — shows context awareness (detects project type)
 6. `xx go to my downloads` — shows shell navigation (cd in your shell)
 7. `cat package.json | xx what deps does this use` — shows pipe input analysis
-8. `xx chat` → ask a few questions — shows the conversational mode
-9. `xx history` — shows everything you just did
+8. `xx stage everything commit with a good message and push` — shows multi-step workflow with git-aware commit messages
+9. `xx chat` → ask a few questions — shows the conversational mode
+10. `xx --version` — shows version info
+11. `xx history` — shows everything you just did

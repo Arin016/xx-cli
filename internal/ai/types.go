@@ -3,16 +3,24 @@ package ai
 
 // Intent constants define how xx should handle the AI's response.
 const (
-	IntentQuery   = "query"   // User is asking a question — auto-run, summarize output.
-	IntentExecute = "execute" // User wants an action — confirm before running.
-	IntentDisplay = "display" // User wants to see data — auto-run, show raw output.
+	IntentQuery    = "query"    // User is asking a question — auto-run, summarize output.
+	IntentExecute  = "execute"  // User wants an action — confirm before running.
+	IntentDisplay  = "display"  // User wants to see data — auto-run, show raw output.
+	IntentWorkflow = "workflow" // User wants a multi-step pipeline — confirm once, run sequentially.
 )
 
 // Result is the structured response from the AI translation.
 type Result struct {
+	Command     string   `json:"command"`
+	Explanation string   `json:"explanation"`
+	Intent      string   `json:"intent"`
+	Steps       []Step   `json:"steps,omitempty"` // Populated when intent is "workflow".
+}
+
+// Step is a single command in a multi-step workflow.
+type Step struct {
 	Command     string `json:"command"`
 	Explanation string `json:"explanation"`
-	Intent      string `json:"intent"`
 }
 
 // ChatMessage represents a single message in a conversation.

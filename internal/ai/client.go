@@ -94,14 +94,30 @@ func (c *Client) Translate(ctx context.Context, prompt string) (*Result, error) 
 	if err := json.Unmarshal([]byte(rawText), &result); err != nil {
 		return nil, fmt.Errorf("failed to parse AI output: %w\nRaw: %s", err, rawText)
 	}
-	if result.Command == "" {
+	if result.Command == "" && result.Intent != IntentWorkflow {
 		return nil, fmt.Errorf("AI returned an empty command")
 	}
 	switch result.Intent {
 	case IntentQuery, IntentExecute, IntentDisplay:
+	case IntentWorkflow:
+		if len(result.Steps) == 0 {
+			// AI said workflow but gave no steps — fall back to single execute.
+			result.Intent = IntentExecute
+		}
 	default:
 		result.Intent = IntentDisplay
 	}
+
+	// If the AI chained commands with && despite instructions, auto-split into a workflow.
+	if result.Intent != IntentWorkflow && result.Command != "" && isChainedCommand(result.Command) {
+		steps := splitChainedCommand(result.Command)
+		if len(steps) > 1 {
+			result.Intent = IntentWorkflow
+			result.Steps = steps
+			result.Explanation = "Multi-step workflow"
+		}
+	}
+
 	return &result, nil
 }
 
@@ -199,18 +215,59 @@ Environment:
 %s
 
 Rules:
-1. Return JSON: {"command": "...", "explanation": "...", "intent": "query|execute|display"}
+1. Return JSON with one of these formats:
+
+   Single command:
+   {"command": "the shell command", "explanation": "what it does", "intent": "query|execute|display"}
+
+   Multi-step workflow (use ONLY when the request needs 2+ sequential commands):
+   {"command": "", "explanation": "overall description", "intent": "workflow", "steps": [{"command": "first command", "explanation": "what step 1 does"}, {"command": "second command", "explanation": "what step 2 does"}]}
+
+   Intent meanings:
    - "query": user asks a question (is X running?, how much RAM?)
-   - "execute": user wants an action (kill Slack, delete files)
+   - "execute": user wants a single action (kill Slack, delete files)
    - "display": user wants to see data (show disk usage, list files)
-2. Command must be valid for the user's OS and shell.
-3. Prefer simple, common commands.
-4. Use the safest variant for destructive ops.
-5. No sudo unless explicitly asked.
-6. Use project context to pick the right tool (e.g. "run tests" -> "go test ./..." in a Go project, "npm test" in Node).
-7. When the user wants to navigate/go to a directory by name, use: find ~ -maxdepth 5 -type d -iname "*<name>*" 2>/dev/null | head -10. Set intent to "display" so the user sees the matching paths.
-8. Return valid JSON only. No extra text.`,
+   - "workflow": user wants multiple sequential steps (commit and push, clean build and test)
+
+2. IMPORTANT: "command" must always be a string, never an array.
+3. Use "workflow" when the request clearly involves 2 or more distinct commands that must run in order. Examples: "commit and push", "clean build and run tests", "stop server and restart".
+4. NEVER chain multiple commands with && or ; — if you need multiple commands, use "workflow" intent with "steps". Pipes (|) within a single command are fine.
+5. For workflows, each step's "command" must be a complete standalone shell command string.
+5. Command must be valid for the user's OS and shell.
+6. Prefer simple, common commands.
+7. Use the safest variant for destructive ops.
+8. No sudo unless explicitly asked.
+9. Use project context to pick the right tool (e.g. "run tests" -> "go test ./..." in a Go project, "npm test" in Node).
+10. Use git context (branch, diff, recent commits) to generate accurate git commands and meaningful commit messages.
+11. When the user wants to navigate/go to a directory by name, use: find ~ -maxdepth 5 -type d -iname "*<name>*" 2>/dev/null | head -10. Set intent to "display".
+12. Return valid JSON only. No extra text.`,
 		runtime.GOOS, runtime.GOARCH, detectShell(), projectContext)
+}
+
+// isChainedCommand checks if a command contains && or ; separators
+// (but not inside quotes or as part of a pipe).
+func isChainedCommand(cmd string) bool {
+	return strings.Contains(cmd, " && ") || strings.Contains(cmd, " ; ")
+}
+
+// splitChainedCommand breaks a "cmd1 && cmd2 && cmd3" string into individual steps.
+func splitChainedCommand(cmd string) []Step {
+	// Split on && first, then ; as fallback.
+	var parts []string
+	if strings.Contains(cmd, " && ") {
+		parts = strings.Split(cmd, " && ")
+	} else {
+		parts = strings.Split(cmd, " ; ")
+	}
+
+	var steps []Step
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			steps = append(steps, Step{Command: p})
+		}
+	}
+	return steps
 }
 
 func detectShell() string {

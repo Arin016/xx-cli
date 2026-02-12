@@ -60,6 +60,22 @@ $ cat error.log | xx what went wrong    # pipe input for analysis
 
   The errors are caused by a missing database connection.
   Check your DB_HOST environment variable.
+
+$ xx stage everything commit with a good message and push
+
+  📋 Workflow (3 steps):
+
+  1. git add -A
+  2. git commit -m "feat: add multi-step workflow engine with git context"
+  3. git push origin main
+
+  Run all? [y/N] y
+
+  ✓ Step 1: git add -A
+  ✓ Step 2: git commit -m "feat: add multi-step workflow engine with git context"
+  ✓ Step 3: git push origin main
+
+  ✓ All 3 steps completed.
 ```
 
 ## How It Works
@@ -82,22 +98,26 @@ $ cat error.log | xx what went wrong    # pipe input for analysis
 │  Smart UX based on   │
 │  intent:             │
 │                      │
-│  query   → auto-run, │
-│            summarize  │
-│  execute → confirm,  │
-│            then run   │
-│  display → auto-run, │
-│            raw output │
+│  query    → auto-run,│
+│             summarize│
+│  execute  → confirm, │
+│             then run │
+│  display  → auto-run,│
+│             raw out  │
+│  workflow → show plan│
+│             confirm, │
+│             run steps│
 └──────────────────────┘
 ```
 
-**xx** classifies every request into one of three intents:
+**xx** classifies every request into one of four intents:
 
 | Intent | When | Confirmation | Output |
 |---|---|---|---|
 | `query` | You're asking a question ("is X running?", "how much RAM?") | No — runs automatically | Friendly plain-English summary |
 | `execute` | You want an action ("kill Slack", "delete temp files") | Yes — asks `y/N` | ✓ Done / ✗ Failed |
 | `display` | You want to see data ("show disk usage", "list files") | No — runs automatically | Raw command output |
+| `workflow` | You want multiple steps ("commit and push", "clean build and test") | Yes — asks `Run all? [y/N]` once | Step-by-step ✓/✗ progress |
 
 For `query` and `display` intents, the underlying command is hidden for a cleaner experience. Use `--verbose` or `-v` to see it.
 
@@ -189,7 +209,7 @@ ollama pull llama3.2
 
 ```bash
 # Clone the repo
-git clone https://github.com/arin/xx-cli.git
+git clone https://github.com/Arin016/xx-cli.git
 cd xx-cli
 
 # Build and install
@@ -335,6 +355,39 @@ git log --oneline -20 | xx summarize recent changes
 
 When `xx` detects piped input, it switches to analysis mode — the AI reads the data and answers your question directly, no command translation involved.
 
+### Multi-Step Workflows
+
+Describe a complex task in plain English, and `xx` breaks it into a step-by-step pipeline:
+
+```bash
+$ xx stage everything commit with a good message and push
+
+  📋 Workflow (3 steps):
+
+  1. git add -A
+  2. git commit -m "feat: add multi-step workflow engine with git context"
+  3. git push origin main
+
+  Run all? [y/N] y
+
+  ✓ Step 1: git add -A
+  ✓ Step 2: git commit -m "feat: add multi-step workflow engine with git context"
+  ✓ Step 3: git push origin main
+
+  ✓ All 3 steps completed.
+```
+
+More examples:
+```bash
+xx clean build and run tests          # go clean → go build → go test ./...
+xx create a new branch called feature-login and switch to it
+xx stop the server on port 3000 and restart it
+```
+
+`xx` is git-aware — it reads your current branch, uncommitted changes, and recent commit history to generate meaningful commit messages and accurate git commands. No more generic "update files" commits.
+
+If any step fails, the workflow stops immediately and shows you what went wrong.
+
 ### Chat Mode
 
 Start an interactive conversation with `xx` — it remembers context between messages:
@@ -367,6 +420,7 @@ Great for when you're learning, troubleshooting, or need step-by-step guidance.
 | `--dry-run` | | Show the generated command without executing it |
 | `--yolo` | | Skip confirmation even for destructive commands |
 | `--verbose` | `-v` | Show the underlying shell command for all intents |
+| `--version` | | Print the version of xx |
 
 ```bash
 # See what command it would run without executing
@@ -440,6 +494,8 @@ ollama pull llama3.1:latest    # Pull a new model
 - **cd via shell wrapper** — Directory navigation works through a shell function wrapper (`eval "$(xx init zsh)"`), using the same safe pattern as `zoxide` and `nvm`. Without the wrapper, `cd` commands are detected and shown as output
 - **Full history** — Every command is logged to `~/.xx-cli/history.json` for audit
 - **Pipe input limits** — Piped data is truncated to 4000 characters to prevent prompt injection and keep responses fast
+- **Workflow halt-on-failure** — Multi-step workflows stop immediately if any step fails, preventing cascading damage
+- **Chat context cap** — Chat history is limited to 20 messages to stay within the model's context window and prevent degraded responses
 - **100% local** — Nothing leaves your machine. Ever.
 
 ## Architecture
@@ -449,7 +505,7 @@ xx-cli/
 ├── main.go                        # Entry point
 ├── cmd/
 │   ├── root.go                    # CLI setup (Cobra), flag definitions
-│   ├── run.go                     # Core execution flow, intent-based UX, pipe input
+│   ├── run.go                     # Core execution flow, intent-based UX, pipe input, workflow runner
 │   ├── init.go                    # Shell wrapper generator (zsh/bash/fish)
 │   ├── explain.go                 # Explain subcommand
 │   ├── chat.go                    # Interactive chat mode
@@ -457,13 +513,13 @@ xx-cli/
 │   └── history.go                 # History subcommand
 ├── internal/
 │   ├── ai/
-│   │   ├── client.go              # Ollama API client, prompt engineering, analyze
-│   │   └── types.go               # Request/response types
+│   │   ├── client.go              # Ollama API client, prompt engineering, workflow translation
+│   │   └── types.go               # Intent constants, result types, Ollama request/response types
 │   ├── config/
 │   │   ├── config.go              # Config loading/saving
 │   │   └── config_test.go         # Config tests
 │   ├── context/
-│   │   ├── detect.go              # Project type detection (Go, Node, Python, etc.)
+│   │   ├── detect.go              # Project type + git context detection
 │   │   └── filesystem.go          # Directory scanner for navigation
 │   ├── executor/
 │   │   ├── executor.go            # Safe command execution, cd detection
@@ -480,7 +536,7 @@ xx-cli/
 ### Key Design Decisions
 
 - **Ollama (local AI)** — Zero cost, zero latency to external APIs, works offline, full privacy
-- **Intent classification** — The AI classifies each request as `query`, `execute`, or `display` to determine UX behavior: whether to confirm, how to present output
+- **Intent classification** — The AI classifies each request as `query`, `execute`, `display`, or `workflow` to determine UX behavior: whether to confirm, how to present output, and whether to run a multi-step pipeline
 - **Smart confirmation** — Only destructive/state-changing commands require user confirmation. Read-only operations run immediately for a frictionless experience
 - **Clean output** — Commands are hidden by default for queries and display. The user sees answers, not implementation details
 - **Post-execution summarization** — For `query` intents, a second AI call interprets raw command output into a human-friendly answer
@@ -491,6 +547,10 @@ xx-cli/
 - **No external dependencies at runtime** — Single binary, just needs Ollama running
 - **Shell wrapper for cd** — Uses the same `eval "$(tool init shell)"` pattern as `zoxide`, `nvm`, and `rbenv`. The Go binary emits a `__XX_CD__` marker, and the shell function intercepts it to run `cd` in the parent shell
 - **Pipe input analysis** — Detects stdin data and routes to a dedicated `Analyze()` AI call instead of command translation. Truncates at 4000 chars for safety
+- **Multi-step workflows** — When a request involves multiple sequential commands, the AI returns a `workflow` intent with individual steps. Each step runs sequentially with progress feedback, and the pipeline halts on first failure
+- **Git context awareness** — Automatically detects current branch, uncommitted changes (`git diff --stat`), and recent commit history. This context is fed into every AI prompt so git commands and commit messages are accurate and meaningful
+- **Auto-split safety net** — If the AI chains commands with `&&` despite instructions, the client automatically splits them into proper workflow steps. Ensures consistent step-by-step UX regardless of model behavior
+- **Version flag** — `xx --version` prints the build version, set at compile time via Go ldflags
 
 ## Development
 
@@ -542,7 +602,7 @@ Currently `xx` is built for Ollama (local inference). The architecture is modula
 
 ### What if Ollama isn't running?
 
-You'll see a clear error: `is Ollama running? connection refused`. Start it with:
+You'll see a clear error: `could not reach Ollama — is it running? (start with: ollama serve)`. Start it with:
 
 ```bash
 ollama serve
@@ -578,18 +638,14 @@ The `?` character is a glob wildcard in zsh. Either drop it (`xx is slack runnin
 
 Features planned for future releases:
 
-### Tier 1 — Game Changers
-
-| Feature | Description |
-|---|---|
-| Multi-step workflows | `xx deploy my app` runs a sequence: git add → commit → push → ssh → pull → restart. Shows each step, confirms once, executes sequentially. Like a mini CI pipeline from natural language. |
-
-### Tier 2 — Power User Features
+### Tier 1 — Next Up
 
 | Feature | Description |
 |---|---|
 | Smart retry | When a command fails, automatically asks the AI to diagnose the error and suggests a corrected command. No more copy-pasting errors into Google. |
 | Aliases / shortcuts | `xx alias save deploy "git push origin main"` — save natural language shortcuts. Next time just type `xx deploy`. |
+
+### Tier 2 — Power User Features
 | Shell completion | Tab-complete subcommands and flags in zsh/bash/fish. Cobra supports this natively. |
 | `xx watch` | Monitor something continuously: `xx watch is my server still running` — polls every N seconds and alerts you if the status changes. |
 

@@ -4,6 +4,7 @@ package context
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -16,6 +17,14 @@ type ProjectInfo struct {
 	HasGit      bool     // is this a git repo
 	HasGradlew  bool     // has ./gradlew wrapper
 	ConfigFiles []string // detected config files
+	Git         *GitInfo // git context (nil if not a git repo)
+}
+
+// GitInfo holds git repository context for smarter AI prompts.
+type GitInfo struct {
+	Branch     string // current branch name
+	DiffStat   string // short summary of uncommitted changes
+	RecentLogs string // last 5 commit messages (oneline)
 }
 
 // markers maps file names to project types.
@@ -81,6 +90,11 @@ func Detect() *ProjectInfo {
 		}
 	}
 
+	// Gather git context if this is a git repo.
+	if info.HasGit {
+		info.Git = detectGit(cwd)
+	}
+
 	return info
 }
 
@@ -96,6 +110,18 @@ func (p *ProjectInfo) Summary() string {
 
 	if p.HasGit {
 		parts = append(parts, "Git repository: yes")
+	}
+
+	if p.Git != nil {
+		if p.Git.Branch != "" {
+			parts = append(parts, "Git branch: "+p.Git.Branch)
+		}
+		if p.Git.DiffStat != "" {
+			parts = append(parts, "Uncommitted changes:\n"+p.Git.DiffStat)
+		}
+		if p.Git.RecentLogs != "" {
+			parts = append(parts, "Recent commits:\n"+p.Git.RecentLogs)
+		}
 	}
 
 	if p.HasGradlew {
@@ -116,4 +142,29 @@ func isMoreSpecific(newType, oldType string) bool {
 		return true
 	}
 	return false
+}
+
+// detectGit gathers git context from the given directory.
+// Each call is best-effort — failures are silently ignored.
+func detectGit(dir string) *GitInfo {
+	gi := &GitInfo{}
+	gi.Branch = gitCmd(dir, "rev-parse", "--abbrev-ref", "HEAD")
+	gi.DiffStat = gitCmd(dir, "diff", "--stat", "--no-color")
+	gi.RecentLogs = gitCmd(dir, "log", "--oneline", "-5", "--no-decorate")
+	if gi.Branch == "" && gi.DiffStat == "" && gi.RecentLogs == "" {
+		return nil
+	}
+	return gi
+}
+
+// gitCmd runs a git command in the given directory and returns trimmed stdout.
+// Returns empty string on any error.
+func gitCmd(dir string, args ...string) string {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
