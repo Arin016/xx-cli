@@ -1,4 +1,5 @@
-// Package ai provides types for the Ollama API client.
+// Package ai provides the AI client and provider interface for xx-cli.
+// Types in this file are shared across the client and provider implementations.
 package ai
 
 // Intent constants define how xx should handle the AI's response.
