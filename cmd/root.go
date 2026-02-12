@@ -48,3 +48,8 @@ func init() {
 func Execute() error {
 	return rootCmd.Execute()
 }
+
+// SetVersion sets the version string displayed by --version.
+func SetVersion(v string) {
+	rootCmd.Version = v
+}

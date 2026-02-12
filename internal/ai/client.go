@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -22,39 +23,7 @@ const (
 	timeout      = 60 * time.Second
 )
 
-const (
-	IntentQuery   = "query"
-	IntentExecute = "execute"
-	IntentDisplay = "display"
-)
-
-type Result struct {
-	Command     string `json:"command"`
-	Explanation string `json:"explanation"`
-	Intent      string `json:"intent"`
-}
-
-type ollamaRequest struct {
-	Model    string          `json:"model"`
-	Messages []ollamaMessage `json:"messages"`
-	Stream   bool            `json:"stream"`
-	Format   string          `json:"format"`
-	Options  ollamaOptions   `json:"options"`
-}
-
-type ollamaMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type ollamaOptions struct {
-	Temperature float64 `json:"temperature"`
-}
-
-type ollamaResponse struct {
-	Message ollamaMessage `json:"message"`
-}
-
+// Client communicates with the Ollama API.
 type Client struct {
 	cfg        *config.Config
 	httpClient *http.Client
@@ -68,14 +37,14 @@ func NewClient(cfg *config.Config) *Client {
 }
 
 func (c *Client) chat(ctx context.Context, messages []ollamaMessage, jsonMode bool) (string, error) {
-	format := ""
-	if jsonMode {
-		format = "json"
-	}
 	reqBody := ollamaRequest{
-		Model: c.cfg.Model, Messages: messages,
-		Stream: false, Format: format,
-		Options: ollamaOptions{Temperature: 0.1},
+		Model:    c.cfg.Model,
+		Messages: messages,
+		Stream:   false,
+		Options:  ollamaOptions{Temperature: 0.1},
+	}
+	if jsonMode {
+		reqBody.Format = "json"
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -88,7 +57,7 @@ func (c *Client) chat(ctx context.Context, messages []ollamaMessage, jsonMode bo
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("is Ollama running? %w", err)
+		return "", fmt.Errorf("could not reach Ollama at %s — is it running? (start with: ollama serve)", ollamaAPIURL)
 	}
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(resp.Body)
@@ -96,7 +65,11 @@ func (c *Client) chat(ctx context.Context, messages []ollamaMessage, jsonMode bo
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API status %d: %s", resp.StatusCode, string(respBody))
+		body := string(respBody)
+		if strings.Contains(body, "model") && strings.Contains(body, "not found") {
+			return "", fmt.Errorf("model %q not found — run: ollama pull %s", c.cfg.Model, c.cfg.Model)
+		}
+		return "", fmt.Errorf("Ollama API error (status %d): %s", resp.StatusCode, body)
 	}
 	var ollamaResp ollamaResponse
 	if err := json.Unmarshal(respBody, &ollamaResp); err != nil {
@@ -166,13 +139,8 @@ func (c *Client) Analyze(ctx context.Context, question, data string) (string, er
 	return c.chat(ctx, messages, false)
 }
 
-// ChatMessage is a public type for conversation history.
-type ChatMessage struct {
-	Role    string
-	Content string
-}
-
 // Chat sends a conversational message with full history for context.
+// History is capped to the last 20 messages to stay within the model's context window.
 func (c *Client) Chat(ctx context.Context, history []ChatMessage) (string, error) {
 	proj := projctx.Detect()
 
@@ -196,7 +164,15 @@ Personality:
 	messages := []ollamaMessage{
 		{Role: "system", Content: systemMsg},
 	}
-	for _, m := range history {
+
+	// Keep only the last 20 messages to avoid exceeding the context window.
+	trimmed := history
+	const maxHistory = 20
+	if len(trimmed) > maxHistory {
+		trimmed = trimmed[len(trimmed)-maxHistory:]
+	}
+
+	for _, m := range trimmed {
 		messages = append(messages, ollamaMessage{Role: m.Role, Content: m.Content})
 	}
 
@@ -241,5 +217,10 @@ func detectShell() string {
 	if runtime.GOOS == "windows" {
 		return "powershell"
 	}
-	return "zsh"
+	if shell := os.Getenv("SHELL"); shell != "" {
+		// Return just the base name (e.g. "/bin/zsh" → "zsh").
+		parts := strings.Split(shell, "/")
+		return parts[len(parts)-1]
+	}
+	return "sh"
 }

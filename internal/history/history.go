@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/arin/xx-cli/internal/config"
@@ -15,6 +16,9 @@ const (
 	fileName   = "history.json"
 	maxEntries = 500
 )
+
+// fileMu guards concurrent access to the history file.
+var fileMu sync.Mutex
 
 // Entry represents a single history record.
 type Entry struct {
@@ -31,6 +35,9 @@ func historyPath() string {
 
 // Save appends a new entry to the history file.
 func Save(entry Entry) error {
+	fileMu.Lock()
+	defer fileMu.Unlock()
+
 	entry.Timestamp = time.Now()
 
 	entries, _ := loadAll()

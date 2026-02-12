@@ -14,7 +14,7 @@ var configCmd = &cobra.Command{
 
 var setKeyCmd = &cobra.Command{
 	Use:   "set-key <api-key>",
-	Short: "Set your Groq API key",
+	Short: "Set your API key",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.SetAPIKey(args[0]); err != nil {
@@ -27,7 +27,7 @@ var setKeyCmd = &cobra.Command{
 
 var setModelCmd = &cobra.Command{
 	Use:   "set-model <model-name>",
-	Short: "Set the Groq model (default: llama-3.3-70b-versatile)",
+	Short: "Set the Ollama model (default: llama3.2:latest)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.SetModel(args[0]); err != nil {
@@ -47,7 +47,11 @@ var showCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("Model:      %s\n", cfg.Model)
-		fmt.Printf("API Key:    %s...%s\n", cfg.APIKey[:4], cfg.APIKey[len(cfg.APIKey)-4:])
+		if cfg.APIKey != "" {
+			fmt.Printf("API Key:    %s...%s\n", cfg.APIKey[:4], cfg.APIKey[len(cfg.APIKey)-4:])
+		} else {
+			fmt.Println("API Key:    (not set — using Ollama local)")
+		}
 		fmt.Printf("Config Dir: %s\n", config.Dir())
 		return nil
 	},
