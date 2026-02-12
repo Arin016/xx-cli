@@ -19,12 +19,12 @@ func Run(command string) (string, error) {
 	cmd.Env = os.Environ()
 	cmd.Dir, _ = os.Getwd()
 
-	// For cd commands, we can't actually change the parent process directory,
-	// so we print a helpful message instead.
+	// For cd commands, emit a special marker that the shell wrapper can intercept.
+	// If running without the wrapper, it falls back to a helpful hint.
 	if isCdCommand(command) {
 		dir := extractCdTarget(command)
 		expanded := expandHome(dir)
-		return fmt.Sprintf("Can't change directory from a subprocess.\nRun this directly:\n  cd %s\n", expanded), nil
+		return fmt.Sprintf("__XX_CD__:%s", expanded), nil
 	}
 
 	var stdout, stderr bytes.Buffer

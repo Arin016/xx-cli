@@ -65,7 +65,33 @@ xx explain "chmod 755 script.sh"
 xx explain "awk '{print $1}' file.txt"
 ```
 
-## 6. Interactive Chat Mode
+## 6. Shell Navigation (requires shell wrapper)
+
+With `eval "$(xx init zsh)"` in your `~/.zshrc`, `xx` can navigate directories:
+
+```bash
+xx go to my downloads
+# → cd /Users/you/Downloads
+
+xx take me to the sodms project
+# → cd ~/AAG/SODMS/sodms
+
+xx go home
+# → cd ~
+```
+
+## 7. Pipe Input (Analyze Data)
+
+Pipe any data into `xx` and ask questions about it:
+
+```bash
+cat error.log | xx what went wrong
+ps aux | xx which process is using the most memory
+git log --oneline -20 | xx summarize recent changes
+cat package.json | xx what dependencies does this use
+```
+
+## 8. Interactive Chat Mode
 
 Start a conversation — context carries over between messages:
 
@@ -81,7 +107,7 @@ you → what's the difference between kill and kill -9
 you → bye
 ```
 
-## 7. Flags
+## 9. Flags
 
 ```bash
 xx --dry-run delete all node_modules folders    # See command without running
@@ -89,7 +115,7 @@ xx --yolo show me disk usage                    # Skip confirmation
 xx -v is chrome running                         # Show the underlying command
 ```
 
-## 8. History & Config
+## 10. History & Config
 
 ```bash
 xx history                          # See past commands
@@ -109,5 +135,7 @@ For the best impression, run in this order:
 3. `xx --dry-run kill slack` — shows execute intent (command + confirmation)
 4. `xx explain "tar -xzf archive.tar.gz"` — shows the explain feature
 5. `xx run tests` — shows context awareness (detects project type)
-6. `xx chat` → ask a few questions — shows the conversational mode
-7. `xx history` — shows everything you just did
+6. `xx go to my downloads` — shows shell navigation (cd in your shell)
+7. `cat package.json | xx what deps does this use` — shows pipe input analysis
+8. `xx chat` → ask a few questions — shows the conversational mode
+9. `xx history` — shows everything you just did

@@ -157,6 +157,15 @@ func (c *Client) Explain(ctx context.Context, command string) (string, error) {
 	return c.chat(ctx, messages, false)
 }
 
+// Analyze interprets piped input data based on the user's question.
+func (c *Client) Analyze(ctx context.Context, question, data string) (string, error) {
+	messages := []ollamaMessage{
+		{Role: "system", Content: "You are a helpful assistant that analyzes data and answers questions about it. Be concise and direct. Give clear, actionable answers. Don't repeat the input data back. Use plain language."},
+		{Role: "user", Content: fmt.Sprintf("Question: %s\n\nData:\n%s", question, truncate(data, 4000))},
+	}
+	return c.chat(ctx, messages, false)
+}
+
 // ChatMessage is a public type for conversation history.
 type ChatMessage struct {
 	Role    string

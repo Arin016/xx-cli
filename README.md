@@ -52,6 +52,14 @@ $ xx run tests              # in a Go project
 
 $ xx run tests              # in a Node project
   → npm test
+
+$ xx go to my downloads     # actually cd's there (with shell wrapper)
+  → cd /Users/you/Downloads
+
+$ cat error.log | xx what went wrong    # pipe input for analysis
+
+  The errors are caused by a missing database connection.
+  Check your DB_HOST environment variable.
 ```
 
 ## How It Works
@@ -191,7 +199,32 @@ make install
 cp $(go env GOPATH)/bin/xx-cli $(go env GOPATH)/bin/xx
 ```
 
-### Step 4: Verify everything works
+### Step 4: Enable Shell Wrapper (recommended)
+
+The shell wrapper lets `xx` change directories in your actual shell — something a subprocess normally can't do. It also enables seamless `cd` navigation like `xx go to my downloads`.
+
+Add this to your shell config:
+
+```bash
+# For zsh (~/.zshrc)
+eval "$(xx init zsh)"
+
+# For bash (~/.bashrc)
+eval "$(xx init bash)"
+
+# For fish (~/.config/fish/config.fish)
+eval "$(xx init fish)"
+```
+
+Then reload your shell:
+
+```bash
+source ~/.zshrc   # or source ~/.bashrc
+```
+
+> Without the wrapper, `xx` still works perfectly for everything else — you just won't get automatic `cd` navigation.
+
+### Step 5: Verify everything works
 
 ```bash
 xx is ollama running
@@ -264,6 +297,44 @@ xx build this       → cargo build
 
 Detected project types: Go, Node.js, Python, Rust, Ruby, Java, Docker, Terraform.
 
+### Shell Navigation (cd)
+
+With the [shell wrapper](#step-4-enable-shell-wrapper-recommended) enabled, `xx` can navigate directories for you:
+
+```bash
+xx go to my downloads
+# → cd /Users/you/Downloads
+
+xx take me to the sodms project
+# → cd ~/AAG/SODMS/sodms
+
+xx go home
+# → cd ~
+```
+
+Under the hood, the Go binary emits a `__XX_CD__` marker that the shell wrapper intercepts and runs `cd` in your actual shell session. This is the same technique used by tools like `zoxide` and `nvm`.
+
+### Pipe Input (Analyze Data)
+
+Pipe any data into `xx` and ask questions about it:
+
+```bash
+# Analyze logs
+cat error.log | xx what went wrong
+cat server.log | xx summarize the last 10 errors
+
+# Understand files
+cat package.json | xx what dependencies does this project use
+cat Dockerfile | xx explain this dockerfile
+
+# Process command output
+ps aux | xx which process is using the most memory
+df -h | xx am i running low on disk space
+git log --oneline -20 | xx summarize recent changes
+```
+
+When `xx` detects piped input, it switches to analysis mode — the AI reads the data and answers your question directly, no command translation involved.
+
 ### Chat Mode
 
 Start an interactive conversation with `xx` — it remembers context between messages:
@@ -317,6 +388,11 @@ xx chat
 # Explain a command
 xx explain "tar -xzf archive.tar.gz"
 
+# Enable shell wrapper (add to ~/.zshrc)
+xx init zsh
+xx init bash
+xx init fish
+
 # View command history
 xx history
 xx history -n 5          # Last 5 commands
@@ -361,8 +437,9 @@ ollama pull llama3.1:latest    # Pull a new model
 - **Dry run mode** — Use `--dry-run` to see the command without executing it
 - **No sudo by default** — The AI never adds `sudo` unless you explicitly ask for it
 - **Safe destructive commands** — For operations like `rm` or `kill`, the AI prefers the safest variant
-- **cd detection** — Since a subprocess can't change your shell's directory, `cd` commands are detected and you're shown the command to run directly
+- **cd via shell wrapper** — Directory navigation works through a shell function wrapper (`eval "$(xx init zsh)"`), using the same safe pattern as `zoxide` and `nvm`. Without the wrapper, `cd` commands are detected and shown as output
 - **Full history** — Every command is logged to `~/.xx-cli/history.json` for audit
+- **Pipe input limits** — Piped data is truncated to 4000 characters to prevent prompt injection and keep responses fast
 - **100% local** — Nothing leaves your machine. Ever.
 
 ## Architecture
@@ -372,22 +449,24 @@ xx-cli/
 ├── main.go                        # Entry point
 ├── cmd/
 │   ├── root.go                    # CLI setup (Cobra), flag definitions
-│   ├── run.go                     # Core execution flow, intent-based UX
+│   ├── run.go                     # Core execution flow, intent-based UX, pipe input
+│   ├── init.go                    # Shell wrapper generator (zsh/bash/fish)
 │   ├── explain.go                 # Explain subcommand
 │   ├── chat.go                    # Interactive chat mode
 │   ├── config.go                  # Config subcommands
 │   └── history.go                 # History subcommand
 ├── internal/
 │   ├── ai/
-│   │   ├── client.go              # Ollama API client, prompt engineering
+│   │   ├── client.go              # Ollama API client, prompt engineering, analyze
 │   │   └── types.go               # Request/response types
 │   ├── config/
 │   │   ├── config.go              # Config loading/saving
 │   │   └── config_test.go         # Config tests
 │   ├── context/
-│   │   └── detect.go              # Project type detection (Go, Node, Python, etc.)
+│   │   ├── detect.go              # Project type detection (Go, Node, Python, etc.)
+│   │   └── filesystem.go          # Directory scanner for navigation
 │   ├── executor/
-│   │   ├── executor.go            # Safe command execution
+│   │   ├── executor.go            # Safe command execution, cd detection
 │   │   └── executor_test.go       # Executor tests
 │   ├── history/
 │   │   └── history.go             # Command history management
@@ -410,6 +489,8 @@ xx-cli/
 - **Command explainer** — `xx explain` breaks down any shell command into plain English, great for learning
 - **Cobra CLI framework** — Industry-standard Go CLI library (used by kubectl, Hugo, GitHub CLI)
 - **No external dependencies at runtime** — Single binary, just needs Ollama running
+- **Shell wrapper for cd** — Uses the same `eval "$(tool init shell)"` pattern as `zoxide`, `nvm`, and `rbenv`. The Go binary emits a `__XX_CD__` marker, and the shell function intercepts it to run `cd` in the parent shell
+- **Pipe input analysis** — Detects stdin data and routes to a dedicated `Analyze()` AI call instead of command translation. Truncates at 4000 chars for safety
 
 ## Development
 
@@ -473,6 +554,10 @@ On macOS, Ollama typically runs automatically as a system service after installa
 
 No. Everything runs locally on your machine. Your prompts and command outputs never leave your computer.
 
+### How does `xx go to downloads` actually change my directory?
+
+It uses a shell wrapper function. When you run `eval "$(xx init zsh)"`, it installs a shell function that intercepts the `xx` command. When the Go binary detects a `cd` operation, it emits a special `__XX_CD__:/path` marker. The shell function catches this and runs `cd` in your actual shell session. This is the same pattern used by `zoxide`, `nvm`, and `rbenv`.
+
 ### Why does `xx is slack running?` fail?
 
 The `?` character is a glob wildcard in zsh. Either drop it (`xx is slack running`) or quote your prompt (`xx "is slack running?"`).
@@ -497,9 +582,7 @@ Features planned for future releases:
 
 | Feature | Description |
 |---|---|
-| Shell function wrapper | `eval "$(xx init zsh)"` — enables `xx go to sodms` to actually `cd` in your shell. Solves the subprocess directory limitation the same way `zoxide` and `nvm` do. |
 | Multi-step workflows | `xx deploy my app` runs a sequence: git add → commit → push → ssh → pull → restart. Shows each step, confirms once, executes sequentially. Like a mini CI pipeline from natural language. |
-| Pipe input | `cat error.log \| xx what went wrong` or `xx analyze this file package.json`. Feed file contents or command output into xx for AI-powered debugging and analysis. |
 
 ### Tier 2 — Power User Features
 

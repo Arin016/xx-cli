@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -26,6 +27,22 @@ func run(cmd *cobra.Command, args []string) error {
 
 	prompt := strings.Join(args, " ")
 	client := ai.NewClient(cfg)
+
+	// Check if there's piped input from stdin.
+	stdinData := readStdin()
+	if stdinData != "" {
+		// Piped input → analyze mode, not command translation.
+		sp := ui.NewSpinner("Analyzing...")
+		sp.Start()
+		answer, err := client.Analyze(cmd.Context(), prompt, stdinData)
+		sp.Stop()
+		if err != nil {
+			return fmt.Errorf("analysis failed: %w", err)
+		}
+		green := color.New(color.FgGreen)
+		green.Printf("\n  %s\n\n", answer)
+		return nil
+	}
 
 	sp := ui.NewSpinner("Thinking...")
 	sp.Start()
@@ -121,4 +138,26 @@ func promptConfirmation() bool {
 	fmt.Scanln(&response)
 	response = strings.TrimSpace(strings.ToLower(response))
 	return response == "y" || response == "yes"
+}
+
+// readStdin reads piped input if available.
+func readStdin() string {
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		return ""
+	}
+	// Check if data is being piped in (not a terminal).
+	if (info.Mode() & os.ModeCharDevice) != 0 {
+		return ""
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return ""
+	}
+	s := strings.TrimSpace(string(data))
+	// Limit to 4000 chars to keep prompt reasonable.
+	if len(s) > 4000 {
+		s = s[:4000] + "\n... (truncated)"
+	}
+	return s
 }

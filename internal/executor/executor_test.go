@@ -27,8 +27,8 @@ func TestRun_CdCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error for cd, got: %v", err)
 	}
-	if !strings.Contains(output, "Run this directly") {
-		t.Errorf("expected cd hint message, got: %s", output)
+	if !strings.Contains(output, "__XX_CD__:") {
+		t.Errorf("expected cd marker, got: %s", output)
 	}
 }
 
