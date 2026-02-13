@@ -47,6 +47,8 @@ func init() {
 	rootCmd.AddCommand(watchCmd)
 	rootCmd.AddCommand(learnCmd)
 	rootCmd.AddCommand(diffExplainCmd)
+	rootCmd.AddCommand(doctorCmd)
+	rootCmd.AddCommand(statsCmd)
 }
 
 // Execute is the entry point called from main.

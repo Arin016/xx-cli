@@ -214,7 +214,36 @@ xx recap
 # • Ran gradle clean build in SODMS project
 ```
 
-## 16. Flags
+## 16. Doctor — System Health Check
+
+```bash
+xx doctor
+# 🩺 xx doctor
+# ✓ xx binary installed
+# ✓ Ollama installed — ollama version is 0.15.0
+# ✓ Ollama server reachable
+# ✓ Model available (llama3.2:latest)
+# ✓ Shell wrapper configured — zsh
+# ...
+# All 8 checks passed. You're good to go.
+```
+
+## 17. Stats — Usage Dashboard
+
+```bash
+xx stats
+# 📊 xx stats
+# Commands:  47 total  (12 today, 47 this week)
+# Success:   89%
+# AI time:   1823ms avg
+# Intent Breakdown
+# query      ████████ 18 (38%)
+# display    ██████ 14 (30%)
+# Top Commands
+# 1. ps aux | grep chrome (8x)
+```
+
+## 18. Flags
 
 ```bash
 xx --dry-run delete all node_modules folders    # See command without running
@@ -222,7 +251,7 @@ xx --yolo show me disk usage                    # Skip confirmation
 xx -v is chrome running                         # Show the underlying command
 ```
 
-## 17. History & Config
+## 19. History & Config
 
 ```bash
 xx history                          # See past commands
@@ -250,6 +279,8 @@ For the best impression, run in this order:
 11. `xx diff-explain` — PR description from your git diff
 12. `xx watch is port 3000 in use` — live monitoring with alerts
 13. `xx recap` — AI-powered standup summary
-14. `xx chat` → ask a few questions — conversational mode
-15. `xx --version` — version info
-16. `xx history` — shows everything you just did
+14. `xx doctor` — system health check (8 pass/fail checks)
+15. `xx stats` — usage dashboard with metrics
+16. `xx chat` → ask a few questions — conversational mode
+17. `xx --version` — version info
+18. `xx history` — shows everything you just did

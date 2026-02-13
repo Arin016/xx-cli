@@ -5,11 +5,13 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/arin/xx-cli/internal/ai"
 	"github.com/arin/xx-cli/internal/config"
 	"github.com/arin/xx-cli/internal/executor"
 	"github.com/arin/xx-cli/internal/history"
+	"github.com/arin/xx-cli/internal/stats"
 	"github.com/arin/xx-cli/internal/ui"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -45,7 +47,9 @@ func run(cmd *cobra.Command, args []string) error {
 	sp := ui.NewSpinner("Thinking...")
 	sp.Start()
 
+	aiStart := time.Now()
 	result, err := client.Translate(cmd.Context(), prompt)
+	aiLatency := time.Since(aiStart)
 	sp.Stop()
 
 	if err != nil {
@@ -95,7 +99,9 @@ func run(cmd *cobra.Command, args []string) error {
 
 	sp2 := ui.NewSpinner("Running...")
 	sp2.Start()
+	execStart := time.Now()
 	output, execErr := executor.Run(result.Command)
+	execLatency := time.Since(execStart)
 	sp2.Stop()
 	success := execErr == nil
 
@@ -104,6 +110,17 @@ func run(cmd *cobra.Command, args []string) error {
 		Command: result.Command,
 		Output:  output,
 		Success: success,
+	})
+
+	// Record stats.
+	_ = stats.Save(stats.Record{
+		Prompt:      prompt,
+		Command:     result.Command,
+		Intent:      result.Intent,
+		AILatency:   aiLatency,
+		ExecLatency: execLatency,
+		Success:     success,
+		Subcommand:  "run",
 	})
 
 	switch result.Intent {
