@@ -413,6 +413,110 @@ $ xx chat
 
 Great for when you're learning, troubleshooting, or need step-by-step guidance.
 
+### Smart Retry
+
+When a command fails, `xx` automatically diagnoses the error and suggests a fix:
+
+```bash
+$ xx install tensorflow
+
+  → pip install tensorflow
+  Execute? [y/N] y
+
+  ✗ Failed: ERROR: Could not find a version that satisfies the requirement...
+
+  🔧 Suggested fix:
+  → pip3 install tensorflow
+
+  Retry? [y/N] y
+
+  ✓ Done.
+```
+
+### WTF — Error Diagnosis
+
+Paste any error message and get an instant diagnosis:
+
+```bash
+$ xx wtf "EACCES: permission denied, open /usr/local/lib/node_modules"
+
+  🔍 Diagnosis
+
+  1. What happened: Permission denied when accessing node_modules
+  2. Why: The directory is owned by root, not your user
+  3. Fix: sudo chown -R $USER /usr/local/lib/node_modules
+
+# Also works with piped input
+$ npm install 2>&1 | xx wtf
+```
+
+### Learn — Teach xx Your Preferences
+
+When the AI gets a command wrong, correct it. `xx` remembers and uses your corrections as few-shot examples:
+
+```bash
+$ xx learn "run tests" "make test"
+  ✓ Learned: "run tests" → make test
+
+$ xx learn "deploy" "./scripts/deploy.sh"
+  ✓ Learned: "deploy" → ./scripts/deploy.sh
+
+# Now xx always uses your preferred commands
+$ xx run tests
+  → make test
+
+# View all corrections
+$ xx learn --list
+```
+
+### Diff Explain — PR Descriptions in Seconds
+
+Reads your git diff and explains what changed in plain English:
+
+```bash
+$ xx diff-explain
+
+  📝 Diff Summary
+
+  Added provider interface for pluggable AI backends. Extracted Ollama HTTP
+  logic into separate module. Added 18 new tests covering all intent types,
+  workflow splitting, and error paths.
+
+$ xx diff-explain --staged    # Only staged changes
+```
+
+### Watch — Monitor and Alert
+
+Poll a query and get alerted when the status changes:
+
+```bash
+$ xx watch is my server still running
+  👁 Watching: is my server still running
+  Command: curl -s -o /dev/null -w "%{http_code}" localhost:3000
+  Interval: 10s (Ctrl+C to stop)
+
+  [14:23:01] Initial: 200
+  [14:23:11] No change
+  [14:23:21] ⚠ CHANGED: 000 (connection refused)
+
+$ xx watch --interval 5 is port 3000 in use
+```
+
+### Recap — AI-Powered Standup
+
+Summarize your terminal activity into a standup-ready recap:
+
+```bash
+$ xx recap
+
+  📋 Today's Recap
+
+  • Built and tested provider abstraction for AI backends
+  • 3 git pushes to main branch (xx-cli project)
+  • Ran gradle clean build in SODMS project (2 failures, 1 success)
+  • Debugged permission issues with node_modules
+```
+
 ### Flags
 
 | Flag | Short | Description |
@@ -441,6 +545,24 @@ xx chat
 
 # Explain a command
 xx explain "tar -xzf archive.tar.gz"
+
+# Diagnose an error
+xx wtf "EACCES: permission denied"
+
+# Explain your git diff
+xx diff-explain
+xx diff-explain --staged
+
+# Monitor something
+xx watch is my server running
+xx watch --interval 5 is port 3000 in use
+
+# Daily standup recap
+xx recap
+
+# Teach xx your preferred commands
+xx learn "run tests" "make test"
+xx learn --list
 
 # Enable shell wrapper (add to ~/.zshrc)
 xx init zsh
@@ -505,10 +627,15 @@ xx-cli/
 ├── main.go                        # Entry point
 ├── cmd/
 │   ├── root.go                    # CLI setup (Cobra), flag definitions
-│   ├── run.go                     # Core execution flow, intent-based UX, pipe input, workflow runner
+│   ├── run.go                     # Core execution flow, intent-based UX, pipe input, workflow runner, smart retry
 │   ├── init.go                    # Shell wrapper generator (zsh/bash/fish)
 │   ├── explain.go                 # Explain subcommand
 │   ├── chat.go                    # Interactive chat mode
+│   ├── recap.go                   # Daily standup summary from history
+│   ├── wtf.go                     # Error diagnosis
+│   ├── watch.go                   # Polling monitor with change alerts
+│   ├── learn.go                   # Teach xx preferred commands
+│   ├── diffexplain.go             # Git diff → plain English summary
 │   ├── config.go                  # Config subcommands
 │   └── history.go                 # History subcommand
 ├── internal/
@@ -526,6 +653,8 @@ xx-cli/
 │   │   └── executor_test.go       # Executor tests
 │   ├── history/
 │   │   └── history.go             # Command history management
+│   ├── learn/
+│   │   └── learn.go               # Few-shot correction storage
 │   └── ui/
 │       └── spinner.go             # Terminal spinner for loading states
 ├── Makefile                       # Build, test, install targets
@@ -551,6 +680,11 @@ xx-cli/
 - **Git context awareness** — Automatically detects current branch, uncommitted changes (`git diff --stat`), and recent commit history. This context is fed into every AI prompt so git commands and commit messages are accurate and meaningful
 - **Auto-split safety net** — If the AI chains commands with `&&` despite instructions, the client automatically splits them into proper workflow steps. Ensures consistent step-by-step UX regardless of model behavior
 - **Version flag** — `xx --version` prints the build version, set at compile time via Go ldflags
+- **Smart retry** — When a command fails, the AI analyzes the error output and suggests a corrected command. One confirmation to retry
+- **Few-shot learning** — `xx learn` stores user corrections in `~/.xx-cli/learned.json`. These are injected as few-shot examples into the system prompt, so the AI adapts to your specific workflow over time
+- **Error diagnosis** — `xx wtf` takes any error message and returns a structured diagnosis: what happened, why, and the exact fix command
+- **Diff explanation** — `xx diff-explain` reads your git diff and generates a human-readable summary, useful for PR descriptions and commit messages
+- **Watch mode** — `xx watch` translates a query once, then polls the resulting command at intervals, alerting on output changes with a terminal bell
 
 ## Development
 
@@ -642,19 +776,15 @@ Features planned for future releases:
 
 | Feature | Description |
 |---|---|
-| Smart retry | When a command fails, automatically asks the AI to diagnose the error and suggests a corrected command. No more copy-pasting errors into Google. |
-| Aliases / shortcuts | `xx alias save deploy "git push origin main"` — save natural language shortcuts. Next time just type `xx deploy`. |
+| Multiple providers | Support OpenAI, Groq, Anthropic alongside Ollama. `xx config set-provider openai`. The Provider interface is already built — just needs new implementations. |
+| Custom rules | `~/.xx-cli/rules.yaml` — teams define rules like "always use pnpm", "never rm -rf without confirmation". AI reads these rules automatically. |
+| Shell completion | Tab-complete subcommands and flags in zsh/bash/fish. Cobra supports this natively. |
 
 ### Tier 2 — Power User Features
-| Shell completion | Tab-complete subcommands and flags in zsh/bash/fish. Cobra supports this natively. |
-| `xx watch` | Monitor something continuously: `xx watch is my server still running` — polls every N seconds and alerts you if the status changes. |
-
-### Tier 3 — Portfolio / Wow Factor
 
 | Feature | Description |
 |---|---|
 | Plugin system | Community-driven extensibility. `xx plugin add docker` adds Docker-specific intelligence with custom handlers. |
-| `xx learn` | Correct the AI when it gets a command wrong. Stores corrections as few-shot examples locally so it gets smarter over time for your specific workflow. |
 | Team sharing | Export/import aliases and learned corrections. `xx sync` pushes config to a shared repo so your whole team benefits. |
 | Web dashboard | `xx dashboard` opens a local web UI showing command history, usage stats, most-used commands, and success/failure rates. |
 

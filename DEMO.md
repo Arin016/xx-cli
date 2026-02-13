@@ -128,7 +128,93 @@ you → what's the difference between kill and kill -9
 you → bye
 ```
 
-## 10. Flags
+## 10. Smart Retry (automatic)
+
+When a command fails, `xx` diagnoses the error and suggests a fix — no extra typing needed:
+
+```bash
+xx install tensorflow
+# → pip install tensorflow
+# Execute? [y/N] y
+# ✗ Failed: ERROR: Could not find a version...
+#
+# 🔧 Suggested fix:
+# → pip3 install tensorflow
+# Retry? [y/N] y
+# ✓ Done.
+```
+
+## 11. WTF — Error Diagnosis
+
+Paste any error and get an instant diagnosis:
+
+```bash
+xx wtf "EACCES: permission denied, open /usr/local/lib/node_modules"
+# 🔍 Diagnosis
+# 1. What happened: Permission denied when accessing node_modules
+# 2. Why: The directory is owned by root, not your user
+# 3. Fix: sudo chown -R $USER /usr/local/lib/node_modules
+
+# Also works with piped input
+npm install 2>&1 | xx wtf
+```
+
+## 12. Learn — Teach xx Your Preferences
+
+Correct the AI when it gets a command wrong. It remembers for next time:
+
+```bash
+xx learn "run tests" "make test"
+# ✓ Learned: "run tests" → make test
+
+xx learn "deploy" "./scripts/deploy.sh"
+# ✓ Learned: "deploy" → ./scripts/deploy.sh
+
+# View all corrections
+xx learn --list
+```
+
+## 13. Diff Explain — PR Descriptions in Seconds
+
+Reads your git diff and explains what changed in plain English:
+
+```bash
+xx diff-explain
+# 📝 Diff Summary
+# Added provider interface for pluggable AI backends...
+
+xx diff-explain --staged    # Only staged changes
+```
+
+## 14. Watch — Monitor and Alert
+
+Poll a query and get alerted when the status changes:
+
+```bash
+xx watch is my server still running
+# 👁 Watching: is my server still running
+# Command: curl -s -o /dev/null -w "%{http_code}" localhost:3000
+# Interval: 10s (Ctrl+C to stop)
+# [14:23:01] Initial: 200
+# [14:23:11] No change
+# [14:23:21] ⚠ CHANGED: 000 (connection refused)
+
+xx watch --interval 5 is port 3000 in use
+```
+
+## 15. Recap — AI-Powered Standup
+
+Summarize your terminal activity into a standup-ready recap:
+
+```bash
+xx recap
+# 📋 Today's Recap
+# • Built and tested provider abstraction for AI backends
+# • 3 git pushes to main branch (xx-cli project)
+# • Ran gradle clean build in SODMS project
+```
+
+## 16. Flags
 
 ```bash
 xx --dry-run delete all node_modules folders    # See command without running
@@ -136,7 +222,7 @@ xx --yolo show me disk usage                    # Skip confirmation
 xx -v is chrome running                         # Show the underlying command
 ```
 
-## 11. History & Config
+## 17. History & Config
 
 ```bash
 xx history                          # See past commands
@@ -151,14 +237,19 @@ xx config set-model llama3.1:latest # Switch AI model
 
 For the best impression, run in this order:
 
-1. `xx is chrome running` — shows the smart query intent (no confirmation, friendly answer)
-2. `xx show me disk usage` — shows display intent (raw output, no confirmation)
-3. `xx --dry-run kill slack` — shows execute intent (command + confirmation)
-4. `xx explain "tar -xzf archive.tar.gz"` — shows the explain feature
-5. `xx run tests` — shows context awareness (detects project type)
-6. `xx go to my downloads` — shows shell navigation (cd in your shell)
-7. `cat package.json | xx what deps does this use` — shows pipe input analysis
-8. `xx stage everything commit with a good message and push` — shows multi-step workflow with git-aware commit messages
-9. `xx chat` → ask a few questions — shows the conversational mode
-10. `xx --version` — shows version info
-11. `xx history` — shows everything you just did
+1. `xx is chrome running` — smart query intent (no confirmation, friendly answer)
+2. `xx show me disk usage` — display intent (raw output, no confirmation)
+3. `xx --dry-run kill slack` — execute intent (command + confirmation)
+4. `xx explain "tar -xzf archive.tar.gz"` — command explainer
+5. `xx run tests` — context awareness (detects project type)
+6. `xx go to my downloads` — shell navigation (cd in your shell)
+7. `cat package.json | xx what deps does this use` — pipe input analysis
+8. `xx stage everything commit with a good message and push` — multi-step workflow with git-aware commit messages
+9. `xx wtf "EACCES: permission denied"` — instant error diagnosis
+10. `xx learn "run tests" "make test"` — teach it your preferences
+11. `xx diff-explain` — PR description from your git diff
+12. `xx watch is port 3000 in use` — live monitoring with alerts
+13. `xx recap` — AI-powered standup summary
+14. `xx chat` → ask a few questions — conversational mode
+15. `xx --version` — version info
+16. `xx history` — shows everything you just did

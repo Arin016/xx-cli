@@ -14,6 +14,7 @@ import (
 
 	"github.com/arin/xx-cli/internal/config"
 	projctx "github.com/arin/xx-cli/internal/context"
+	"github.com/arin/xx-cli/internal/learn"
 )
 
 // Client orchestrates AI interactions. It builds prompts, parses responses,
@@ -154,6 +155,49 @@ Personality:
 	return c.provider.Complete(ctx, messages, false)
 }
 
+// Recap generates a standup-ready summary from today's command history.
+func (c *Client) Recap(ctx context.Context, historyData string, count int) (string, error) {
+	messages := []Message{
+		{Role: "system", Content: "You are a productivity assistant. Given a log of terminal commands from today, generate a concise standup-ready summary. Group related commands by project or task. Mention key actions (builds, deploys, git operations, debugging). Use bullet points. Be concise — this should be copy-pasteable into a standup message. Don't list every command, summarize the work."},
+		{Role: "user", Content: fmt.Sprintf("Here are my %d commands from today:\n\n%s", count, historyData)},
+	}
+	return c.provider.Complete(ctx, messages, false)
+}
+
+// Diagnose takes an error message and returns a diagnosis with a suggested fix.
+func (c *Client) Diagnose(ctx context.Context, errorMsg string) (string, error) {
+	messages := []Message{
+		{Role: "system", Content: "You are a senior DevOps engineer and debugging expert. Given an error message, explain what went wrong in plain English, why it happened, and give the exact command to fix it. Be concise and actionable. Format: 1) What happened 2) Why 3) Fix command. No markdown."},
+		{Role: "user", Content: errorMsg},
+	}
+	return c.provider.Complete(ctx, messages, false)
+}
+
+// DiffExplain takes a git diff and returns a human-readable summary.
+func (c *Client) DiffExplain(ctx context.Context, diff string) (string, error) {
+	messages := []Message{
+		{Role: "system", Content: "You are a code reviewer. Given a git diff, write a concise summary of what changed and why it matters. Group changes by file or feature. This should be useful as a PR description or commit message. Be specific about what was added, removed, or modified. No markdown. Keep it under 10 lines."},
+		{Role: "user", Content: diff},
+	}
+	return c.provider.Complete(ctx, messages, false)
+}
+
+// SmartRetry analyzes a failed command and suggests a corrected version.
+func (c *Client) SmartRetry(ctx context.Context, userPrompt, failedCmd, errorOutput string) (string, error) {
+	messages := []Message{
+		{Role: "system", Content: "You are a shell expert. A command failed. Analyze the error and return ONLY the corrected command — nothing else. No explanation, no quotes, just the fixed command on a single line. If you can't determine a fix, return an empty string."},
+		{Role: "user", Content: fmt.Sprintf("User wanted: %s\nFailed command: %s\nError output:\n%s", userPrompt, failedCmd, truncate(errorOutput, 2000))},
+	}
+	fix, err := c.provider.Complete(ctx, messages, false)
+	if err != nil {
+		return "", err
+	}
+	// Clean up — the AI sometimes wraps in backticks or quotes.
+	fix = strings.TrimSpace(fix)
+	fix = strings.Trim(fix, "`\"'")
+	return fix, nil
+}
+
 // --- Helper functions ---
 
 func truncate(s string, maxLen int) string {
@@ -201,8 +245,8 @@ Rules:
 10. Use project context to pick the right tool (e.g. "run tests" -> "go test ./..." in a Go project, "npm test" in Node).
 11. Use git context (branch, diff, recent commits) to generate accurate git commands and meaningful commit messages.
 12. When the user wants to navigate/go to a directory by name, use: find ~ -maxdepth 5 -type d -iname "*<name>*" 2>/dev/null | head -10. Set intent to "display".
-13. Return valid JSON only. No extra text.`,
-		runtime.GOOS, runtime.GOARCH, detectShell(), projectContext)
+13. Return valid JSON only. No extra text.%s`,
+		runtime.GOOS, runtime.GOARCH, detectShell(), projectContext, learn.FewShotPrompt())
 }
 
 // isChainedCommand checks if a command contains && or ; separators.

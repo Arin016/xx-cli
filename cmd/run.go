@@ -131,6 +131,30 @@ func run(cmd *cobra.Command, args []string) error {
 			if output != "" {
 				dim.Fprintf(os.Stderr, "  %s\n", output)
 			}
+			// Smart retry: ask AI to diagnose and suggest a fix.
+			retryCmd, retryErr := smartRetry(cmd, client, prompt, result.Command, output)
+			if retryErr == nil && retryCmd != "" {
+				cyan.Fprintf(os.Stderr, "\n  🔧 Suggested fix:\n")
+				cyan.Fprintf(os.Stderr, "  → %s\n\n", retryCmd)
+				if promptRetry() {
+					sp4 := ui.NewSpinner("Retrying...")
+					sp4.Start()
+					retryOutput, retryExecErr := executor.Run(retryCmd)
+					sp4.Stop()
+					_ = history.Save(history.Entry{
+						Prompt:  prompt + " (retry)",
+						Command: retryCmd,
+						Output:  retryOutput,
+						Success: retryExecErr == nil,
+					})
+					if retryExecErr == nil {
+						green := color.New(color.FgGreen)
+						green.Fprintf(os.Stderr, "\n  ✓ Done.\n\n")
+					} else {
+						red.Fprintf(os.Stderr, "\n  ✗ Retry also failed: %v\n\n", retryExecErr)
+					}
+				}
+			}
 		}
 
 	default:
@@ -176,6 +200,24 @@ func readStdin() string {
 		s = s[:4000] + "\n... (truncated)"
 	}
 	return s
+}
+
+// smartRetry asks the AI to diagnose a failed command and suggest a fix.
+func smartRetry(cmd *cobra.Command, client *ai.Client, prompt, failedCmd, errorOutput string) (string, error) {
+	sp := ui.NewSpinner("Diagnosing...")
+	sp.Start()
+	fix, err := client.SmartRetry(cmd.Context(), prompt, failedCmd, errorOutput)
+	sp.Stop()
+	return fix, err
+}
+
+func promptRetry() bool {
+	yellow := color.New(color.FgYellow)
+	yellow.Fprint(os.Stderr, "  Retry? [y/N] ")
+	var response string
+	fmt.Scanln(&response)
+	response = strings.TrimSpace(strings.ToLower(response))
+	return response == "y" || response == "yes"
 }
 
 // runWorkflow executes a multi-step pipeline, confirming once then running each step sequentially.

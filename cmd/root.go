@@ -42,6 +42,11 @@ func init() {
 	rootCmd.AddCommand(explainCmd)
 	rootCmd.AddCommand(chatCmd)
 	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(recapCmd)
+	rootCmd.AddCommand(wtfCmd)
+	rootCmd.AddCommand(watchCmd)
+	rootCmd.AddCommand(learnCmd)
+	rootCmd.AddCommand(diffExplainCmd)
 }
 
 // Execute is the entry point called from main.
