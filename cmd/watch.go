@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -58,30 +59,34 @@ Examples:
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-		var lastOutput string
+		var lastStable string // normalized output for change detection
+		var lastRaw string    // raw output for display
 		tick := time.NewTicker(time.Duration(watchInterval) * time.Second)
 		defer tick.Stop()
 
 		// Run immediately, then on each tick.
 		runWatch := func() {
-			output, _ := executor.Run(result.Command)
-			output = strings.TrimSpace(output)
+			raw, _ := executor.Run(result.Command)
+			output := filterWatchNoise(raw, result.Command)
+			stable := normalizeForComparison(output)
 			now := time.Now().Format("15:04:05")
 
-			if lastOutput == "" {
+			if lastStable == "" {
 				// First run.
 				dim.Fprintf(os.Stderr, "  [%s] ", now)
 				green.Fprintf(os.Stderr, "Initial: ")
 				fmt.Fprintf(os.Stderr, "%s\n", summarizeOutput(output))
-			} else if output != lastOutput {
-				// Status changed.
+			} else if stable != lastStable {
+				// Status changed (meaningful difference, not just PID/CPU jitter).
 				yellow.Fprintf(os.Stderr, "  [%s] ⚠ CHANGED: ", now)
 				fmt.Fprintf(os.Stderr, "%s\n", summarizeOutput(output))
 				fmt.Fprint(os.Stderr, "\a") // Terminal bell.
 			} else {
 				dim.Fprintf(os.Stderr, "  [%s] No change\n", now)
 			}
-			lastOutput = output
+			lastStable = stable
+			lastRaw = output
+			_ = lastRaw // available for future verbose mode
 		}
 
 		runWatch()
@@ -111,6 +116,41 @@ func summarizeOutput(output string) string {
 		first += fmt.Sprintf(" (+%d lines)", len(lines)-1)
 	}
 	return first
+}
+// filterWatchNoise removes lines from command output that reference the watch
+// process itself or transient grep subshells. Without this, commands like
+// "ps aux | grep X" trigger false CHANGED alerts every tick because the PID
+// and CPU stats of the xx-watch process fluctuate.
+func filterWatchNoise(raw, command string) string {
+	lines := strings.Split(strings.TrimSpace(raw), "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		lower := strings.ToLower(line)
+		// Skip lines referencing the watch process or grep itself.
+		if strings.Contains(lower, "xx watch") ||
+			strings.Contains(lower, "xx-cli watch") {
+			continue
+		}
+		// Classic "grep -v grep" pattern: skip the grep subprocess line.
+		if strings.Contains(lower, "grep") && strings.Contains(lower, command) {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return strings.TrimSpace(strings.Join(filtered, "\n"))
+}
+// normalizeForComparison strips volatile numeric fields (PIDs, CPU%, memory,
+// timestamps) from command output so that only meaningful content changes
+// trigger alerts. Without this, commands like "ps aux | grep X" report false
+// changes every tick because stats like CPU% and RSS fluctuate constantly.
+var numericFieldRe = regexp.MustCompile(`\b\d[\d.:]*\b`)
+
+func normalizeForComparison(output string) string {
+	// Replace all numeric tokens with a placeholder.
+	normalized := numericFieldRe.ReplaceAllString(output, "N")
+	// Collapse whitespace so column alignment shifts don't matter.
+	normalized = regexp.MustCompile(`\s+`).ReplaceAllString(normalized, " ")
+	return strings.TrimSpace(normalized)
 }
 
 func init() {
