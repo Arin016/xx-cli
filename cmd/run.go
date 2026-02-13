@@ -31,16 +31,14 @@ func run(cmd *cobra.Command, args []string) error {
 	// Check if there's piped input from stdin.
 	stdinData := readStdin()
 	if stdinData != "" {
-		// Piped input → analyze mode, not command translation.
-		sp := ui.NewSpinner("Analyzing...")
-		sp.Start()
-		answer, err := client.Analyze(cmd.Context(), prompt, stdinData)
-		sp.Stop()
+		// Piped input → analyze mode with streaming.
+		green := color.New(color.FgGreen)
+		green.Fprint(os.Stderr, "\n  ")
+		stream := client.AnalyzeStream(cmd.Context(), prompt, stdinData)
+		_, err := ui.RenderStream(os.Stdout, stream, "  ")
 		if err != nil {
 			return fmt.Errorf("analysis failed: %w", err)
 		}
-		green := color.New(color.FgGreen)
-		green.Printf("\n  %s\n\n", answer)
 		return nil
 	}
 
@@ -110,15 +108,14 @@ func run(cmd *cobra.Command, args []string) error {
 
 	switch result.Intent {
 	case ai.IntentQuery:
-		sp3 := ui.NewSpinner("Summarizing...")
-		sp3.Start()
-		summary, sErr := client.Summarize(cmd.Context(), prompt, result.Command, output, success)
-		sp3.Stop()
+		// Stream the summary in real-time.
+		stream := client.SummarizeStream(cmd.Context(), prompt, result.Command, output, success)
+		green := color.New(color.FgGreen)
+		green.Fprint(os.Stderr, "\n  ")
+		_, sErr := ui.RenderStream(os.Stdout, stream, "  ")
 		if sErr != nil {
+			// Fallback: show raw output if streaming fails.
 			fmt.Print(output)
-		} else {
-			green := color.New(color.FgGreen)
-			green.Printf("\n  %s\n\n", summary)
 		}
 
 	case ai.IntentExecute:

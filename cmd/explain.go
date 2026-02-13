@@ -34,16 +34,18 @@ Examples:
 		sp := ui.NewSpinner("Thinking...")
 		sp.Start()
 
-		explanation, err := client.Explain(cmd.Context(), command)
-		sp.Stop()
+		// Use streaming — stop spinner as soon as first token arrives.
+		stream := client.ExplainStream(cmd.Context(), command)
 
+		cyan := color.New(color.FgCyan, color.Bold)
+		cyan.Fprintf(os.Stderr, "\n  %s\n\n", command)
+
+		sp.Stop()
+		_, err = ui.RenderStream(os.Stdout, stream, "  ")
 		if err != nil {
 			return fmt.Errorf("explanation failed: %w", err)
 		}
 
-		cyan := color.New(color.FgCyan, color.Bold)
-		cyan.Fprintf(os.Stderr, "\n  %s\n\n", command)
-		fmt.Printf("  %s\n\n", explanation)
 		return nil
 	},
 }

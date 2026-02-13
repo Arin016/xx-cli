@@ -770,20 +770,21 @@ The `?` character is a glob wildcard in zsh. Either drop it (`xx is slack runnin
 
 ## Roadmap
 
-Features planned for future releases:
+### In Progress
 
-### Tier 1 — Next Up
+| Feature | Description |
+|---|---|
+| Streaming responses | Stream tokens from Ollama as they arrive instead of blocking until completion. Chunked HTTP parsing, incremental JSON extraction, real-time terminal output. Touches concurrent I/O, buffered readers, and live UX. |
+| `xx stats` | Structured observability for every command: AI call latency, execution time, success/failure rate, most-used intents. `xx stats` renders a terminal dashboard. Instruments the tool itself with the same rigor you'd apply to a production service. |
+| `xx doctor` | System health check: is Ollama running, is the model pulled, is the shell wrapper installed, is PATH configured, disk space, memory. Outputs a clean pass/fail checklist. The same pattern used by Homebrew, Flutter, and Rails. |
+
+### Planned
 
 | Feature | Description |
 |---|---|
 | Multiple providers | Support OpenAI, Groq, Anthropic alongside Ollama. `xx config set-provider openai`. The Provider interface is already built — just needs new implementations. |
 | Custom rules | `~/.xx-cli/rules.yaml` — teams define rules like "always use pnpm", "never rm -rf without confirmation". AI reads these rules automatically. |
 | Shell completion | Tab-complete subcommands and flags in zsh/bash/fish. Cobra supports this natively. |
-
-### Tier 2 — Power User Features
-
-| Feature | Description |
-|---|---|
 | Plugin system | Community-driven extensibility. `xx plugin add docker` adds Docker-specific intelligence with custom handlers. |
 | Team sharing | Export/import aliases and learned corrections. `xx sync` pushes config to a shared repo so your whole team benefits. |
 | Web dashboard | `xx dashboard` opens a local web UI showing command history, usage stats, most-used commands, and success/failure rates. |

@@ -56,10 +56,11 @@ Type 'exit' or 'quit' to end the session.`,
 
 			history = append(history, ai.ChatMessage{Role: "user", Content: input})
 
-			sp := ui.NewSpinner("Thinking...")
-			sp.Start()
-			reply, err := client.Chat(cmd.Context(), history)
-			sp.Stop()
+			// Stream the response token by token.
+			stream := client.ChatStream(cmd.Context(), history)
+
+			cyan.Fprintf(os.Stderr, "  xx → ")
+			reply, err := ui.RenderStream(os.Stderr, stream, "")
 
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "  Error: %v\n\n", err)
@@ -67,9 +68,6 @@ Type 'exit' or 'quit' to end the session.`,
 			}
 
 			history = append(history, ai.ChatMessage{Role: "assistant", Content: reply})
-
-			cyan.Fprintf(os.Stderr, "  xx → ")
-			fmt.Fprintf(os.Stderr, "%s\n\n", reply)
 		}
 
 		return nil

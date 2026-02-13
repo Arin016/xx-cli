@@ -54,3 +54,8 @@ type ollamaOptions struct {
 type ollamaResponse struct {
 	Message ollamaMessage `json:"message"`
 }
+// ollamaStreamChunk is a single line from Ollama's streaming NDJSON response.
+type ollamaStreamChunk struct {
+	Message ollamaMessage `json:"message"`
+	Done    bool          `json:"done"`
+}

@@ -49,18 +49,16 @@ Examples:
 		}
 
 		client := ai.NewClient(cfg)
-		sp := ui.NewSpinner("Diagnosing...")
-		sp.Start()
-		diagnosis, err := client.Diagnose(cmd.Context(), errorMsg)
-		sp.Stop()
 
+		red := color.New(color.FgRed, color.Bold)
+		red.Fprintf(os.Stderr, "\n  🔍 Diagnosis\n\n")
+
+		stream := client.DiagnoseStream(cmd.Context(), errorMsg)
+		_, err = ui.RenderStream(os.Stdout, stream, "  ")
 		if err != nil {
 			return fmt.Errorf("diagnosis failed: %w", err)
 		}
 
-		red := color.New(color.FgRed, color.Bold)
-		red.Fprintf(os.Stderr, "\n  🔍 Diagnosis\n\n")
-		fmt.Printf("  %s\n\n", diagnosis)
 		return nil
 	},
 }

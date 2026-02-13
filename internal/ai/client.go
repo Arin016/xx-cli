@@ -283,3 +283,125 @@ func detectShell() string {
 	}
 	return "sh"
 }
+
+// --- Streaming methods ---
+// These return a channel of tokens for real-time output. If the provider
+// doesn't support streaming, they fall back to Complete() and emit the
+// full response as a single token.
+
+// streamOrFallback checks if the provider supports streaming. If so, it
+// calls CompleteStream. Otherwise, it falls back to Complete and emits
+// the result as a single token.
+func (c *Client) streamOrFallback(ctx context.Context, messages []Message) <-chan StreamDelta {
+	if sp, ok := c.provider.(StreamingProvider); ok {
+		return sp.CompleteStream(ctx, messages)
+	}
+	// Fallback: call Complete and emit the full response as one chunk.
+	ch := make(chan StreamDelta, 1)
+	go func() {
+		defer close(ch)
+		text, err := c.provider.Complete(ctx, messages, false)
+		if err != nil {
+			ch <- StreamDelta{Err: err}
+			return
+		}
+		ch <- StreamDelta{Token: text}
+		ch <- StreamDelta{Done: true}
+	}()
+	return ch
+}
+
+// ExplainStream streams a plain English explanation of a shell command.
+func (c *Client) ExplainStream(ctx context.Context, command string) <-chan StreamDelta {
+	messages := []Message{
+		{Role: "system", Content: "You are a shell command expert. Explain the given command in plain English. Break down each flag and argument. Be concise but thorough. Use simple language a junior developer would understand. Do not use markdown."},
+		{Role: "user", Content: command},
+	}
+	return c.streamOrFallback(ctx, messages)
+}
+
+// SummarizeStream streams a human-friendly interpretation of command output.
+func (c *Client) SummarizeStream(ctx context.Context, userPrompt, command, output string, success bool) <-chan StreamDelta {
+	status := "succeeded"
+	if !success {
+		status = "failed"
+	}
+	messages := []Message{
+		{Role: "system", Content: "You are a helpful CLI assistant. Interpret command output and give a short, friendly, human-readable answer. Be concise (1-3 sentences). Answer the user's question directly. Don't show raw output. Use plain language."},
+		{Role: "user", Content: fmt.Sprintf("I asked: %q\nCommand: %s\nStatus: %s\nOutput:\n%s", userPrompt, command, status, truncate(output, 2000))},
+	}
+	return c.streamOrFallback(ctx, messages)
+}
+
+// AnalyzeStream streams an analysis of piped input data.
+func (c *Client) AnalyzeStream(ctx context.Context, question, data string) <-chan StreamDelta {
+	messages := []Message{
+		{Role: "system", Content: "You are a helpful assistant that analyzes data and answers questions about it. Be concise and direct. Give clear, actionable answers. Don't repeat the input data back. Use plain language."},
+		{Role: "user", Content: fmt.Sprintf("Question: %s\n\nData:\n%s", question, truncate(data, 4000))},
+	}
+	return c.streamOrFallback(ctx, messages)
+}
+
+// ChatStream streams a conversational response with full history.
+func (c *Client) ChatStream(ctx context.Context, history []ChatMessage) <-chan StreamDelta {
+	proj := projctx.Detect()
+
+	systemMsg := fmt.Sprintf(`You are xx, a friendly and knowledgeable terminal assistant. You help users with shell commands, system administration, programming, and general tech questions.
+
+Environment:
+- OS: %s
+- Architecture: %s
+- Shell: %s
+%s
+
+Personality:
+- Be friendly, casual, and helpful — like a senior dev friend.
+- Give concise answers. Don't over-explain unless asked.
+- When suggesting commands, show the command and briefly explain what it does.
+- If the user seems stuck, guide them step by step.
+- You can chat about anything tech-related, not just commands.
+- Keep responses short and conversational. No walls of text.`,
+		runtime.GOOS, runtime.GOARCH, detectShell(), proj.Summary())
+
+	messages := []Message{
+		{Role: "system", Content: systemMsg},
+	}
+
+	trimmed := history
+	const maxHistory = 20
+	if len(trimmed) > maxHistory {
+		trimmed = trimmed[len(trimmed)-maxHistory:]
+	}
+	for _, m := range trimmed {
+		messages = append(messages, Message{Role: m.Role, Content: m.Content})
+	}
+
+	return c.streamOrFallback(ctx, messages)
+}
+
+// DiagnoseStream streams an error diagnosis.
+func (c *Client) DiagnoseStream(ctx context.Context, errorMsg string) <-chan StreamDelta {
+	messages := []Message{
+		{Role: "system", Content: "You are a senior DevOps engineer and debugging expert. Given an error message, explain what went wrong in plain English, why it happened, and give the exact command to fix it. Be concise and actionable. Format: 1) What happened 2) Why 3) Fix command. No markdown."},
+		{Role: "user", Content: errorMsg},
+	}
+	return c.streamOrFallback(ctx, messages)
+}
+
+// RecapStream streams a standup-ready summary from command history.
+func (c *Client) RecapStream(ctx context.Context, historyData string, count int) <-chan StreamDelta {
+	messages := []Message{
+		{Role: "system", Content: "You are a productivity assistant. Given a log of terminal commands from today, generate a concise standup-ready summary. Group related commands by project or task. Mention key actions (builds, deploys, git operations, debugging). Use bullet points. Be concise — this should be copy-pasteable into a standup message. Don't list every command, summarize the work."},
+		{Role: "user", Content: fmt.Sprintf("Here are my %d commands from today:\n\n%s", count, historyData)},
+	}
+	return c.streamOrFallback(ctx, messages)
+}
+
+// DiffExplainStream streams a human-readable summary of a git diff.
+func (c *Client) DiffExplainStream(ctx context.Context, diff string) <-chan StreamDelta {
+	messages := []Message{
+		{Role: "system", Content: "You are a code reviewer. Given a git diff, write a concise summary of what changed and why it matters. Group changes by file or feature. This should be useful as a PR description or commit message. Be specific about what was added, removed, or modified. No markdown. Keep it under 10 lines."},
+		{Role: "user", Content: diff},
+	}
+	return c.streamOrFallback(ctx, messages)
+}

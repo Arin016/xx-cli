@@ -57,18 +57,16 @@ Examples:
 		}
 
 		client := ai.NewClient(cfg)
-		sp := ui.NewSpinner("Analyzing diff...")
-		sp.Start()
-		explanation, err := client.DiffExplain(cmd.Context(), diff)
-		sp.Stop()
 
+		cyan := color.New(color.FgCyan, color.Bold)
+		cyan.Fprintf(os.Stderr, "\n  📝 Diff Summary\n\n")
+
+		stream := client.DiffExplainStream(cmd.Context(), diff)
+		_, err = ui.RenderStream(os.Stdout, stream, "  ")
 		if err != nil {
 			return fmt.Errorf("diff explanation failed: %w", err)
 		}
 
-		cyan := color.New(color.FgCyan, color.Bold)
-		cyan.Fprintf(os.Stderr, "\n  📝 Diff Summary\n\n")
-		fmt.Printf("  %s\n\n", explanation)
 		return nil
 	},
 }

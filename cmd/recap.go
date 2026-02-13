@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -57,18 +58,16 @@ a concise recap powered by AI.`,
 		}
 
 		client := ai.NewClient(cfg)
-		sp := ui.NewSpinner("Generating recap...")
-		sp.Start()
-		recap, err := client.Recap(cmd.Context(), sb.String(), len(todayEntries))
-		sp.Stop()
 
+		cyan := color.New(color.FgCyan, color.Bold)
+		cyan.Fprintf(cmd.ErrOrStderr(), "\n  📋 Today's Recap\n\n")
+
+		stream := client.RecapStream(cmd.Context(), sb.String(), len(todayEntries))
+		_, err = ui.RenderStream(os.Stdout, stream, "  ")
 		if err != nil {
 			return fmt.Errorf("recap failed: %w", err)
 		}
 
-		cyan := color.New(color.FgCyan, color.Bold)
-		cyan.Fprintf(cmd.ErrOrStderr(), "\n  📋 Today's Recap\n\n")
-		fmt.Printf("  %s\n\n", recap)
 		return nil
 	},
 }
