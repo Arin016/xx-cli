@@ -585,6 +585,8 @@ Without RAG, the AI might suggest `free -h` (which doesn't exist on macOS). With
 
 The vector store is a compact binary file (~220KB for 71 docs) stored at `~/.xx-cli/vectors.bin`. No external database dependencies — everything is built from scratch using Ollama's `nomic-embed-text` model for embeddings and cosine similarity for search.
 
+The vector store also grows automatically through auto-learning: every time a command succeeds, `xx` spawns a detached background process that embeds the prompt+command pair and appends it to the store — but only if no near-duplicate already exists (cosine similarity > 0.95). This means the system gets smarter with every use, without you ever running `xx index` again. The background process has zero latency impact on the user.
+
 ### Doctor — System Health Check
 
 Run a comprehensive health check on your setup:
@@ -765,6 +767,7 @@ xx-cli/
 │   ├── doctor.go                  # System health check (9 checks)
 │   ├── stats.go                   # Usage statistics dashboard
 │   ├── index.go                   # Build RAG knowledge index
+│   ├── autolearn.go               # Hidden _learn subcommand for background auto-learning
 │   ├── config.go                  # Config subcommands
 │   └── history.go                 # History subcommand
 ├── internal/
@@ -784,15 +787,16 @@ xx-cli/
 │   │   ├── executor.go            # Safe command execution, cd detection
 │   │   └── executor_test.go       # Executor tests
 │   ├── history/
-│   │   └── history.go             # Command history management
+│   │   ├── history.go             # Command history management
+│   │   └── history_test.go        # History tests
 │   ├── learn/
 │   │   └── learn.go               # Few-shot correction storage
 │   ├── rag/
 │   │   ├── embeddings.go          # Embedding client (Ollama nomic-embed-text API)
-│   │   ├── store.go               # Binary vector store with cosine similarity search
+│   │   ├── store.go               # Binary vector store with cosine similarity search, O(1) append, dedup
 │   │   ├── indexer.go             # Indexes OS docs, learned corrections, command history
-│   │   ├── rag.go                 # Top-level Retrieve() — query embedding + search + formatting
-│   │   └── rag_test.go            # 14 tests: cosine similarity, store ops, indexer, formatting
+│   │   ├── rag.go                 # Top-level Retrieve() + LearnFromSuccess() auto-learning
+│   │   └── rag_test.go            # 35 tests: cosine similarity, store ops, append, dedup, indexer, formatting
 │   ├── stats/
 │   │   └── stats.go               # Command metrics, aggregation, dashboard data
 │   └── ui/
@@ -830,6 +834,7 @@ xx-cli/
 - **Structured observability** — Every command is instrumented with AI latency, execution latency, intent, and success/failure. `xx stats` renders a terminal dashboard with aggregated metrics, intent breakdown, and top commands
 - **System health check** — `xx doctor` runs 9 checks (binary, PATH, Ollama install, server connectivity, model availability, embedding model, shell wrapper, config dir, system info) with pass/fail/warn output. Same pattern as `brew doctor` and `flutter doctor`
 - **Local RAG pipeline** — Built from scratch with no external vector DB dependencies. Uses Ollama's `nomic-embed-text` model (768-dimensional vectors) for embeddings, a custom binary vector store with cosine similarity search, and category pre-filtering for hybrid retrieval. Indexes 3 knowledge sources: curated OS command docs (45 macOS / 6 Linux entries), user-taught corrections from `xx learn`, and successful command history. At query time, the top-5 most relevant documents (above 0.3 similarity threshold) are injected into the system prompt. The vector store is a compact binary file (~220KB) — no JSON overhead, no external dependencies. Use `xx -v` to see what RAG retrieved for any query
+- **Auto-learning (online learning)** — After every successful command, a detached background process embeds the prompt+command pair and appends it to the vector store via O(1) binary append. Semantic deduplication (cosine similarity > 0.95) prevents bloat. The background process is fully decoupled from the user's session — zero latency impact, and if it fails, nobody notices. This is the write-behind pattern: persist knowledge asynchronously after the user-facing operation completes
 
 ## Development
 

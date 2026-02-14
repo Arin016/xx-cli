@@ -119,3 +119,64 @@ func TestFewShotPrompt_WithCorrections(t *testing.T) {
 		t.Error("few-shot prompt should have header")
 	}
 }
+
+func TestSave_EmptyPrompt(t *testing.T) {
+	_, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	err := Save(Correction{Prompt: "", Command: "ls"})
+	if err != nil {
+		t.Fatalf("Save with empty prompt should not error: %v", err)
+	}
+
+	corrections, _ := LoadAll()
+	if len(corrections) != 1 {
+		t.Fatalf("expected 1 correction, got %d", len(corrections))
+	}
+}
+
+func TestSave_SpecialCharacters(t *testing.T) {
+	_, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	err := Save(Correction{Prompt: "what's running on port 3000?", Command: "lsof -i :3000"})
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	corrections, _ := LoadAll()
+	if corrections[0].Prompt != "what's running on port 3000?" {
+		t.Errorf("special characters not preserved: %q", corrections[0].Prompt)
+	}
+}
+
+func TestSave_UpdatePreservesOrder(t *testing.T) {
+	_, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	Save(Correction{Prompt: "first", Command: "cmd1"})
+	Save(Correction{Prompt: "second", Command: "cmd2"})
+	Save(Correction{Prompt: "third", Command: "cmd3"})
+	// Update the second one.
+	Save(Correction{Prompt: "second", Command: "cmd2-updated"})
+
+	corrections, _ := LoadAll()
+	if len(corrections) != 3 {
+		t.Fatalf("expected 3 corrections, got %d", len(corrections))
+	}
+	if corrections[1].Command != "cmd2-updated" {
+		t.Errorf("expected updated command, got %q", corrections[1].Command)
+	}
+}
+
+func TestFewShotPrompt_SingleCorrection(t *testing.T) {
+	_, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	Save(Correction{Prompt: "test", Command: "make test"})
+
+	prompt := FewShotPrompt()
+	if !strings.Contains(prompt, "test") || !strings.Contains(prompt, "make test") {
+		t.Errorf("few-shot prompt should contain the correction: %q", prompt)
+	}
+}

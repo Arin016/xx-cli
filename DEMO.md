@@ -254,7 +254,51 @@ xx -v --dry-run how much RAM do I have
 
 Without RAG, the AI might suggest `free -h` (doesn't exist on macOS). With RAG, it knows to use `sysctl hw.memsize`.
 
-## 18. Stats — Usage Dashboard
+## 18. Auto-Learning (Online Learning)
+
+Every time a command succeeds, `xx` automatically learns from it in the background — no user action needed:
+
+```bash
+# First time: xx doesn't know your preference
+xx run tests
+# → go test ./...
+# ✓ Done.
+# (background: embeds "run tests → go test ./..." into vector store)
+
+# Teach it your preference
+xx learn "run tests" "make test"
+
+# Next time: xx uses your correction AND remembers the success
+xx run tests
+# → make test
+# ✓ Done.
+# (background: embeds "run tests → make test" — dedup skips if already known)
+```
+
+The learning happens via a detached background process — zero latency impact on the user. If the embedding fails or Ollama is busy, nobody notices. The vector store just gets smarter over time.
+
+```bash
+# Check the doc count before and after
+xx index
+# ✓ Indexed 71 documents total
+
+# Run a novel command
+xx what version of python do i have
+# → python3 --version
+# ✓ Python 3.12.0
+
+# Re-index to see the new doc
+xx index
+# ✓ Indexed 72 documents total  ← auto-learned!
+
+# Run the same thing again — dedup kicks in
+xx what version of python do i have
+# (background: cosine similarity > 0.95 with existing doc → skip)
+xx index
+# ✓ Indexed 72 documents total  ← no bloat
+```
+
+## 19. Stats — Usage Dashboard
 
 ```bash
 xx stats
@@ -269,7 +313,7 @@ xx stats
 # 1. ps aux | grep chrome (8x)
 ```
 
-## 19. Flags
+## 20. Flags
 
 ```bash
 xx --dry-run delete all node_modules folders    # See command without running
@@ -277,7 +321,7 @@ xx --yolo show me disk usage                    # Skip confirmation
 xx -v is chrome running                         # Show the underlying command
 ```
 
-## 20. History & Config
+## 21. History & Config
 
 ```bash
 xx history                          # See past commands

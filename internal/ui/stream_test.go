@@ -168,3 +168,75 @@ func TestRenderStream_MultipleTokensConcatenate(t *testing.T) {
 		t.Errorf("expected 'abcde', got %q", result)
 	}
 }
+
+func TestRenderStream_NewlineInToken(t *testing.T) {
+	ch := make(chan ai.StreamDelta, 3)
+	ch <- ai.StreamDelta{Token: "line1\nline2"}
+	ch <- ai.StreamDelta{Done: true}
+	close(ch)
+
+	var buf bytes.Buffer
+	result, err := RenderStream(&buf, ch, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "line1\nline2" {
+		t.Errorf("expected 'line1\\nline2', got %q", result)
+	}
+}
+
+func TestRenderStream_LargeOutput(t *testing.T) {
+	ch := make(chan ai.StreamDelta, 1002)
+	for i := 0; i < 1000; i++ {
+		ch <- ai.StreamDelta{Token: "x"}
+	}
+	ch <- ai.StreamDelta{Done: true}
+	close(ch)
+
+	var buf bytes.Buffer
+	result, err := RenderStream(&buf, ch, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1000 {
+		t.Errorf("expected 1000 chars, got %d", len(result))
+	}
+}
+
+func TestRenderStream_PrefixOnlyOnFirstToken(t *testing.T) {
+	ch := make(chan ai.StreamDelta, 4)
+	ch <- ai.StreamDelta{Token: "a"}
+	ch <- ai.StreamDelta{Token: "b"}
+	ch <- ai.StreamDelta{Token: "c"}
+	ch <- ai.StreamDelta{Done: true}
+	close(ch)
+
+	var buf bytes.Buffer
+	_, err := RenderStream(&buf, ch, ">> ")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	output := buf.String()
+	// Prefix should appear exactly once.
+	count := strings.Count(output, ">> ")
+	if count != 1 {
+		t.Errorf("prefix should appear exactly once, appeared %d times in %q", count, output)
+	}
+}
+
+func TestRenderStream_ErrorAfterDone(t *testing.T) {
+	ch := make(chan ai.StreamDelta, 3)
+	ch <- ai.StreamDelta{Token: "ok"}
+	ch <- ai.StreamDelta{Done: true}
+	ch <- ai.StreamDelta{Err: fmt.Errorf("late error")} // Should be ignored.
+	close(ch)
+
+	var buf bytes.Buffer
+	result, err := RenderStream(&buf, ch, "")
+	if err != nil {
+		t.Fatalf("error after Done should be ignored, got: %v", err)
+	}
+	if result != "ok" {
+		t.Errorf("expected 'ok', got %q", result)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 const (
@@ -67,3 +68,58 @@ func formatContext(results []SearchResult) string {
 	}
 	return sb.String()
 }
+
+// NearDuplicateThreshold is the cosine similarity above which two vectors
+// are considered "the same knowledge". 0.95 is high enough to catch
+// "check disk space" vs "show disk usage" but won't merge unrelated commands.
+const NearDuplicateThreshold float32 = 0.95
+
+// LearnFromSuccess embeds a successful prompt+command pair and appends it
+// to the vector store — but only if no near-duplicate already exists.
+//
+// This runs in a background goroutine after every successful command execution.
+// It's the core of the online learning loop:
+//   user runs command → command succeeds → embed & store → future queries benefit
+//
+// It enforces its own 5-second timeout so it never blocks the process from
+// exiting. If Ollama is slow or unreachable, we just abandon this learning
+// opportunity — the user never waits.
+//
+// Errors are silently ignored — this must never degrade the user experience.
+func LearnFromSuccess(ctx context.Context, prompt, command, category string) {
+	// Hard timeout: if the whole operation (embed + load + dedup + append)
+	// takes longer than 5s, bail. Typical time is ~300ms.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	// Compose the text exactly like historyDocs() does, so the embeddings
+	// are in the same semantic space and dedup works correctly.
+	text := fmt.Sprintf("'%s' was successfully executed as: %s", prompt, command)
+
+	// Embed the text.
+	embedder := NewEmbedClient()
+	vec, err := embedder.Embed(ctx, text)
+	if err != nil {
+		return // Silent failure — user never sees this.
+	}
+
+	// Load the current store to check for duplicates.
+	store := NewStore()
+	if err := store.Load(); err != nil {
+		return // No store yet — skip (user hasn't run 'xx index').
+	}
+
+	// Semantic dedup: if a very similar vector already exists, skip.
+	if store.HasNearDuplicate(vec, NearDuplicateThreshold) {
+		return
+	}
+
+	// Append the new document (O(1) write).
+	doc := Document{
+		Text:     text,
+		Source:   "history",
+		Category: category,
+	}
+	doc.Vector = vec
+	_ = store.Append(doc) // Silent failure.
+}
+

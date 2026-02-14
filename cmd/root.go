@@ -50,6 +50,7 @@ func init() {
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(statsCmd)
 	rootCmd.AddCommand(indexCmd)
+	rootCmd.AddCommand(autoLearnCmd)
 }
 
 // Execute is the entry point called from main.

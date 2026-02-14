@@ -55,7 +55,8 @@ func (s *Store) Len() int {
 }
 
 // storePath returns the full path to the binary vector file.
-func storePath() string {
+// It's a variable so tests can override it.
+var storePath = func() string {
 	return filepath.Join(config.Dir(), storeFileName)
 }
 
@@ -77,7 +78,7 @@ func storePath() string {
 // but ~6KB in JSON (decimal text). For 4K docs that's 12MB vs 24MB.
 // Binary is also faster to parse — no string→float conversion.
 func (s *Store) Save() error {
-	if err := os.MkdirAll(config.Dir(), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(storePath()), 0o700); err != nil {
 		return err
 	}
 
@@ -257,3 +258,86 @@ func readString(f *os.File) (string, error) {
 	}
 	return string(b), nil
 }
+
+// Append writes a single document to the end of the binary store file
+// and updates the document count header — O(1) instead of O(n) full rewrite.
+//
+// Binary layout reminder:
+//   [4 bytes] doc count (uint32)  ← we update this in-place
+//   [... existing docs ...]
+//   [new doc appended here]
+//
+// This is the write-behind pattern: the user's command finishes instantly,
+// and we persist the new knowledge in the background.
+func (s *Store) Append(doc Document) error {
+	path := storePath()
+
+	// If the file doesn't exist yet, fall back to a full Save.
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		s.docs = append(s.docs, doc)
+		return s.Save()
+	}
+
+	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to open vector store for append: %w", err)
+	}
+	defer f.Close()
+
+	// Read current document count from the first 4 bytes.
+	var count uint32
+	if err := binary.Read(f, binary.LittleEndian, &count); err != nil {
+		return fmt.Errorf("failed to read document count: %w", err)
+	}
+
+	// Seek to end of file to append the new document.
+	if _, err := f.Seek(0, 2); err != nil {
+		return fmt.Errorf("failed to seek to end: %w", err)
+	}
+
+	// Write the document in the same binary format as Save().
+	if err := writeString(f, doc.Text); err != nil {
+		return err
+	}
+	if err := writeString(f, doc.Source); err != nil {
+		return err
+	}
+	if err := writeString(f, doc.Category); err != nil {
+		return err
+	}
+	if err := binary.Write(f, binary.LittleEndian, uint32(len(doc.Vector))); err != nil {
+		return err
+	}
+	if err := binary.Write(f, binary.LittleEndian, doc.Vector); err != nil {
+		return err
+	}
+
+	// Seek back to byte 0 and overwrite the count with count+1.
+	if _, err := f.Seek(0, 0); err != nil {
+		return fmt.Errorf("failed to seek to header: %w", err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, count+1); err != nil {
+		return fmt.Errorf("failed to update document count: %w", err)
+	}
+
+	// Also update the in-memory store so subsequent operations see the new doc.
+	s.docs = append(s.docs, doc)
+
+	return nil
+}
+
+// HasNearDuplicate checks if any document in the store has cosine similarity
+// above the given threshold with the provided vector.
+//
+// Used to prevent bloat during auto-learning: if the user runs "check disk space"
+// ten times, we only store it once. Semantic dedup, not string dedup — so
+// "check disk" and "show disk usage" are recognized as near-duplicates.
+func (s *Store) HasNearDuplicate(vec []float32, threshold float32) bool {
+	for _, doc := range s.docs {
+		if cosineSimilarity(vec, doc.Vector) > threshold {
+			return true
+		}
+	}
+	return false
+}
+

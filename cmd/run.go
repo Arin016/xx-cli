@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -132,6 +133,13 @@ func run(cmd *cobra.Command, args []string) error {
 		Subcommand:  "run",
 	})
 
+	// Auto-learn: if the command succeeded, spawn a detached subprocess that
+	// embeds the prompt+command and appends it to the vector store. The subprocess
+	// outlives this process — user never waits, zero latency impact.
+	if success {
+		spawnAutoLearn(prompt, result.Command, "general")
+	}
+
 	switch result.Intent {
 	case ai.IntentQuery:
 		// Stream the summary in real-time.
@@ -173,6 +181,8 @@ func run(cmd *cobra.Command, args []string) error {
 					if retryExecErr == nil {
 						green := color.New(color.FgGreen)
 						green.Fprintf(os.Stderr, "\n  ✓ Done.\n\n")
+						// Auto-learn the successful retry.
+						spawnAutoLearn(prompt, retryCmd, "general")
 					} else {
 						red.Fprintf(os.Stderr, "\n  ✗ Retry also failed: %v\n\n", retryExecErr)
 					}
@@ -292,9 +302,38 @@ func runWorkflow(cmd *cobra.Command, client *ai.Client, result *ai.Result, promp
 		cyan.Fprintf(os.Stderr, "  ✓ Step %d: ", i+1)
 		green.Fprintf(os.Stderr, "%s\n", step.Command)
 		allOutput.WriteString(output)
+
+		// Auto-learn each successful workflow step.
+		spawnAutoLearn(prompt, step.Command, "general")
 	}
 
 	fmt.Fprintln(os.Stderr)
 	green.Fprintf(os.Stderr, "  ✓ All %d steps completed.\n\n", len(result.Steps))
 	return nil
 }
+
+// spawnAutoLearn forks a detached `xx _learn` subprocess that embeds the
+// prompt+command pair and appends it to the vector store. The subprocess
+// runs independently — the parent process exits immediately without waiting.
+//
+// This is the same pattern as `git maintenance run --detach`: the parent
+// fires off a background job and forgets about it. If it fails, nobody
+// notices. If it succeeds, the vector store gets smarter for next time.
+func spawnAutoLearn(prompt, command, category string) {
+	exe, err := os.Executable()
+	if err != nil {
+		return // Can't find our own binary — skip silently.
+	}
+
+	cmd := exec.Command(exe, "_learn", prompt, command, category)
+
+	// Detach: no stdin/stdout/stderr, no process group tie to parent.
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	// Start and forget. We don't call cmd.Wait() — the OS reaps the
+	// zombie when it finishes (init/launchd adopts orphaned processes).
+	_ = cmd.Start()
+}
+
