@@ -86,11 +86,18 @@ Each document:
 
 ---
 
-## 3. Embedding Cache (LRU)
+## 3. ✅ Embedding Cache (LRU)
 
-**Priority:** P1 — saves ~200ms per repeated query
+**Priority:** P1 — saves ~200ms per repeated query — **DONE**
 
-**What:** Cache recent query embeddings in an in-memory LRU cache. If the same (or very similar) query was embedded recently, reuse the cached vector instead of calling Ollama again.
+**What:** Cache recent query embeddings in an in-memory LRU cache. If the same query was embedded recently, reuse the cached vector instead of calling Ollama again.
+
+**Implementation:**
+- Added `cache map[string]cachedEmbedding` and `cacheOrder []string` to `EmbedClient`
+- `Embed()` checks cache before calling Ollama API — cache hit returns in 0ms vs ~200ms
+- LRU eviction: oldest entry dropped when cache exceeds 100 entries
+- `touchLRU()` moves accessed keys to back of order slice
+- Memory budget: 100 entries × 768 floats × 4 bytes = ~300KB — negligible
 
 **Why:** Users often repeat queries ("is chrome running", "show disk usage"). Each embedding call takes ~200ms. An LRU cache with 100 entries eliminates redundant API calls. This is the same pattern used by DNS resolvers and CDN edge caches.
 
@@ -113,11 +120,21 @@ Each document:
 
 ---
 
-## 4. Adaptive Relevance Scoring (Reinforcement Signal)
+## 4. ✅ Adaptive Relevance Scoring (Reinforcement Signal)
 
-**Priority:** P1 — makes retrieval quality improve over time
+**Priority:** P1 — makes retrieval quality improve over time — **DONE**
 
 **What:** Track a success/failure count per document. When a retrieved document leads to a successful command, increment its score. When it leads to a failure, decrement. Use this score as a multiplier on cosine similarity during search.
+
+**Implementation:**
+- Added `SuccessCount int32` and `FailureCount int32` to `Document` struct
+- Binary format upgraded to v2 with version header — backward compatible with v1 (scoring fields default to 0)
+- `adaptiveScore()` formula: `cosine * (1 + ln(1+successes) - 0.5*ln(1+failures))` with 0.01 floor
+- `UpdateScore()` finds the most similar doc (above 0.5 threshold) and increments success/failure count
+- `RecordFeedback()` in `rag.go` orchestrates: embed query → load store → update score → save
+- `spawnFeedback()` in `run.go` forks detached `xx _feedback <prompt> <success|failure>` subprocess
+- Hidden `_feedback` subcommand in `autolearn.go` calls `RecordFeedback()`
+- Fires after every command execution (both success and failure) — zero latency impact
 
 **Why:** Not all documents are equally reliable. A command that worked 10 times is more trustworthy than one that worked once. This is a lightweight form of bandit-style exploration/exploitation — the system learns which commands are reliable on this specific machine.
 
@@ -263,9 +280,9 @@ finalScore = cosine * (1 + ln(1 + successes) - 0.5 * ln(1 + failures))
 |-------|------------|--------|--------|--------|
 | 1 | Incremental Append (O(1) writes) | 1 hour | Enables everything else | ✅ Done |
 | 1 | Auto-Learning from Successful Commands | 2 hours | Highest user-facing impact | ✅ Done |
-| 2 | Embedding Cache (LRU) | 1 hour | 200ms savings per repeated query | |
+| 2 | Embedding Cache (LRU) | 1 hour | 200ms savings per repeated query | ✅ Done |
 | 2 | TTL / Staleness Eviction | 1 hour | Prevents unbounded growth | |
-| 3 | Adaptive Relevance Scoring | 2 hours | Retrieval quality improves over time | |
+| 3 | Adaptive Relevance Scoring | 2 hours | Retrieval quality improves over time | ✅ Done |
 | 3 | Contextual Re-ranking | 2 hours | Production-grade retrieval | |
 | 4 | LSH Index | 4 hours | Sub-linear search (only needed at scale) | |
 | 4 | Vector Store Compaction | 2 hours | Maintenance optimization | |

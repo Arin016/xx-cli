@@ -24,3 +24,23 @@ var autoLearnCmd = &cobra.Command{
 		return nil
 	},
 }
+
+// feedbackCmd is a hidden subcommand that records adaptive scoring feedback
+// in a detached subprocess. After command execution, run.go spawns
+// `xx _feedback <prompt> <success|failure>` as a background process.
+// This process embeds the prompt, finds the most relevant doc in the store,
+// and increments its success or failure count.
+//
+// This is the reinforcement signal that makes retrieval quality improve
+// over time — the same principle as Reddit's ranking algorithm.
+var feedbackCmd = &cobra.Command{
+	Use:    "_feedback",
+	Hidden: true,
+	Args:   cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		prompt := args[0]
+		success := args[1] == "success"
+		rag.RecordFeedback(cmd.Context(), prompt, success)
+		return nil
+	},
+}

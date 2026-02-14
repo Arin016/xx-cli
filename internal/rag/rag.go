@@ -123,3 +123,37 @@ func LearnFromSuccess(ctx context.Context, prompt, command, category string) {
 	_ = store.Append(doc) // Silent failure.
 }
 
+// RecordFeedback updates the adaptive relevance score for the document
+// most similar to the user's query. Called after command execution to
+// provide a reinforcement signal — success boosts the doc, failure penalizes it.
+//
+// This is the feedback loop that makes retrieval quality improve over time:
+//   query → retrieve docs → execute command → success/failure → update scores
+//
+// Like LearnFromSuccess, this runs in a background subprocess with a 5s timeout.
+// Errors are silently ignored.
+func RecordFeedback(ctx context.Context, prompt string, success bool) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Embed the original prompt to find which doc was most relevant.
+	embedder := NewEmbedClient()
+	vec, err := embedder.Embed(ctx, prompt)
+	if err != nil {
+		return
+	}
+
+	store := NewStore()
+	if err := store.Load(); err != nil {
+		return
+	}
+
+	// Update the score of the best-matching document.
+	if !store.UpdateScore(vec, success) {
+		return // No relevant doc found.
+	}
+
+	// Persist the updated store.
+	_ = store.Save()
+}
+

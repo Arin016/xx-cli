@@ -140,6 +140,11 @@ func run(cmd *cobra.Command, args []string) error {
 		spawnAutoLearn(prompt, result.Command, "general")
 	}
 
+	// Adaptive scoring feedback: update the relevance score of the most
+	// relevant document based on whether the command succeeded or failed.
+	// This runs in a separate background process — zero latency impact.
+	spawnFeedback(prompt, success)
+
 	switch result.Intent {
 	case ai.IntentQuery:
 		// Stream the summary in real-time.
@@ -334,6 +339,29 @@ func spawnAutoLearn(prompt, command, category string) {
 
 	// Start and forget. We don't call cmd.Wait() — the OS reaps the
 	// zombie when it finishes (init/launchd adopts orphaned processes).
+	_ = cmd.Start()
+}
+
+// spawnFeedback forks a detached `xx _feedback` subprocess that updates
+// the adaptive relevance score for the most relevant document. This is
+// the reinforcement signal: success boosts a doc's score, failure penalizes it.
+//
+// Same fire-and-forget pattern as spawnAutoLearn.
+func spawnFeedback(prompt string, success bool) {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+
+	outcome := "failure"
+	if success {
+		outcome = "success"
+	}
+
+	cmd := exec.Command(exe, "_feedback", prompt, outcome)
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
 	_ = cmd.Start()
 }
 

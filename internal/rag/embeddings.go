@@ -20,13 +20,26 @@ const (
 
 	embedURL     = "http://localhost:11434/api/embeddings"
 	embedTimeout = 30 * time.Second
+
+	// cacheMaxSize is the maximum number of embeddings to cache in memory.
+	// 100 entries × 768 floats × 4 bytes = ~300KB — negligible memory cost.
+	cacheMaxSize = 100
 )
 
 // EmbedClient generates vector embeddings via Ollama's local API.
+// It includes an in-memory LRU cache that eliminates redundant API calls
+// for repeated queries (e.g., "is chrome running" asked 5 times).
 type EmbedClient struct {
 	model      string
 	apiURL     string
 	httpClient *http.Client
+	cache      map[string]cachedEmbedding
+	cacheOrder []string // LRU order: oldest at front, newest at back.
+}
+
+// cachedEmbedding stores a cached vector with its key for LRU tracking.
+type cachedEmbedding struct {
+	vector []float32
 }
 
 // NewEmbedClient creates an embedding client that talks to local Ollama.
@@ -35,6 +48,8 @@ func NewEmbedClient() *EmbedClient {
 		model:      EmbedModel,
 		apiURL:     embedURL,
 		httpClient: &http.Client{Timeout: embedTimeout},
+		cache:      make(map[string]cachedEmbedding),
+		cacheOrder: make([]string, 0, cacheMaxSize),
 	}
 }
 
@@ -53,7 +68,17 @@ type embedResponse struct {
 // This is the fundamental operation — every piece of text we want to search
 // over must be embedded first. The returned slice has exactly 768 elements
 // (the dimensionality of nomic-embed-text).
+//
+// Uses an in-memory LRU cache to avoid redundant Ollama API calls.
+// Cache hit: 0ms. Cache miss: ~200ms (Ollama round-trip).
 func (e *EmbedClient) Embed(ctx context.Context, text string) ([]float32, error) {
+	// Check cache first.
+	if cached, ok := e.cache[text]; ok {
+		// Move to back of LRU order (most recently used).
+		e.touchLRU(text)
+		return cached.vector, nil
+	}
+
 	reqBody := embedRequest{
 		Model:  e.model,
 		Prompt: text,
@@ -94,7 +119,33 @@ func (e *EmbedClient) Embed(ctx context.Context, text string) ([]float32, error)
 		return nil, fmt.Errorf("empty embedding returned — model may not support embeddings")
 	}
 
+	// Store in cache.
+	e.putLRU(text, result.Embedding)
+
 	return result.Embedding, nil
+}
+
+// touchLRU moves a key to the back of the LRU order (most recently used).
+func (e *EmbedClient) touchLRU(key string) {
+	for i, k := range e.cacheOrder {
+		if k == key {
+			e.cacheOrder = append(e.cacheOrder[:i], e.cacheOrder[i+1:]...)
+			e.cacheOrder = append(e.cacheOrder, key)
+			return
+		}
+	}
+}
+
+// putLRU adds a new entry to the cache, evicting the oldest if at capacity.
+func (e *EmbedClient) putLRU(key string, vec []float32) {
+	if len(e.cache) >= cacheMaxSize {
+		// Evict the oldest entry (front of the order slice).
+		oldest := e.cacheOrder[0]
+		e.cacheOrder = e.cacheOrder[1:]
+		delete(e.cache, oldest)
+	}
+	e.cache[key] = cachedEmbedding{vector: vec}
+	e.cacheOrder = append(e.cacheOrder, key)
 }
 
 // EmbedBatch embeds multiple texts and returns their vectors in the same order.
