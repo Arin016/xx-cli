@@ -237,20 +237,30 @@ Build a local vector store that makes `xx` smarter about OS-specific commands:
 # Build the index (one-time, re-run to refresh)
 xx index
 # 🔍 Building knowledge index...
-#   ✓ 45 OS command entries
+#   ✓ 49 OS command entries
 #   ✓ 1 learned corrections
-#   ✓ 25 history entries
-# ✓ Indexed 71 documents total
-# Done in 1.6s
+#   ✓ 28 history entries (12 skipped as duplicates)
+# ✓ Indexed 78 documents total
+# Done in 1.1s
+
+# Flush and rebuild from scratch (fixes poisoned indexes)
+xx index --flush
+# 🗑  Flushed existing index
+# 🔍 Building knowledge index...
+#   ✓ 49 OS command entries
+#   ✓ 1 learned corrections
+#   ✓ 11 history entries (29 skipped as duplicates)
+# ✓ Indexed 61 documents total
 
 # See what RAG retrieved for a query
 xx -v --dry-run how much RAM do I have
 # 📚 RAG context:
 # - [builtin] how much total RAM on macOS: use 'sysctl hw.memsize'
-# - [history] 'how much RAM do i have' was successfully executed as: sysctl hw.memsize
 # ...
 # → sysctl hw.memsize
 ```
+
+History entries that overlap with curated builtins are automatically skipped during indexing — this prevents auto-learned bad commands from poisoning the knowledge base. Builtin entries also get a 1.2x score boost at search time.
 
 Without RAG, the AI might suggest `free -h` (doesn't exist on macOS). With RAG, it knows to use `sysctl hw.memsize`.
 
@@ -350,7 +360,8 @@ For the best impression, run in this order:
 12. `xx watch is port 3000 in use` — live monitoring with alerts
 13. `xx recap` — AI-powered standup summary
 14. `xx index` — build the RAG knowledge index
-15. `xx -v --dry-run how much RAM do I have` — see RAG context + correct macOS command
+15. `xx index --flush` — flush and rebuild from scratch (shows dedup in action)
+16. `xx -v --dry-run how much RAM do I have` — see RAG context + correct macOS command
 16. `xx doctor` — system health check (9 pass/fail checks)
 17. `xx stats` — usage dashboard with metrics
 18. `xx chat` → ask a few questions — conversational mode

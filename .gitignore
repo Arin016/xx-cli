@@ -3,3 +3,4 @@ dist/
 *.exe
 .env
 .DS_Store
+STUDY_GUIDE.md

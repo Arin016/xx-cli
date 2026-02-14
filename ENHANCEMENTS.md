@@ -165,7 +165,33 @@ finalScore = cosine * (1 + ln(1 + successes) - 0.5 * ln(1 + failures))
 
 ---
 
-## 5. TTL / Staleness Eviction
+## 5. ✅ RAG Poisoning Fix (History Dedup + Source Boosting + Flush)
+
+**Priority:** P0 — critical for retrieval quality — **DONE**
+
+**What:** Auto-learned history entries can poison the index when commands exit successfully but produce useless output (e.g., `ps aux | awk '{print $4}'` prints numbers without process names). These entries accumulate success counts via adaptive scoring and outrank curated builtins. The fix is a three-layer defense.
+
+**Implementation:**
+- **History dedup at index time:** In `indexer.go`, history entries are embedded and checked against already-indexed builtins/learned entries via `HasNearDuplicate(vec, 0.7)`. If a history entry covers the same topic as a builtin, it's dropped. 29 of 40 history entries were deduped in the first clean rebuild.
+- **Source-based boosting:** In `store.go` `Search()`, builtin entries get a 1.2x score multiplier and learned corrections get 1.1x. This ensures curated knowledge outranks auto-learned entries even when cosine similarity is similar.
+- **System prompt rule 15:** Explicitly tells the model to prefer `[builtin]` entries over `[history]` entries in the RAG context.
+- **`xx index --flush`:** `Store.Flush()` deletes the vector store file. The `--flush` flag on `xx index` wipes the store before rebuilding — the nuclear option for a poisoned index.
+- **4 new builtin entries:** Added specific process/RAM entries to `macosCommandDocs()` including "NEVER use `ps aux | awk` to print only one column" and "top processes by RAM with names: use `ps aux --sort=-%mem | head -10`".
+
+**Why:** The gap between "command succeeded" (exit code 0) and "command was useful" (user got what they wanted) is a fundamental challenge in any system that learns from implicit feedback. The adaptive scoring system handles this over time, but bad entries get a head start. The dedup prevents them from entering the index in the first place.
+
+**Complexity:** Medium
+**Files:** `internal/rag/indexer.go`, `internal/rag/store.go`, `internal/rag/rag.go`, `internal/ai/client.go`, `cmd/index.go`
+
+**Interview talking points:**
+- Implicit vs explicit feedback — exit code 0 ≠ user satisfaction
+- Three-layer defense: index-time dedup, search-time boosting, prompt-level instruction
+- Same problem as recommendation systems: a "click" doesn't mean the user liked the content
+- The 0.7 cosine threshold is deliberately lower than the 0.95 used for auto-learn dedup — we want to be aggressive about filtering history against builtins
+
+---
+
+## 6. TTL / Staleness Eviction
 
 **Priority:** P2 — prevents unbounded growth
 
@@ -190,7 +216,7 @@ finalScore = cosine * (1 + ln(1 + successes) - 0.5 * ln(1 + failures))
 
 ---
 
-## 6. Contextual Re-ranking (Two-Stage Retrieval)
+## 7. Contextual Re-ranking (Two-Stage Retrieval)
 
 **Priority:** P2 — production-grade retrieval quality
 
@@ -220,7 +246,7 @@ finalScore = cosine * (1 + ln(1 + successes) - 0.5 * ln(1 + failures))
 
 ---
 
-## 7. Approximate Nearest Neighbor (LSH Index)
+## 8. Approximate Nearest Neighbor (LSH Index)
 
 **Priority:** P3 — only needed at 10K+ documents
 
@@ -247,7 +273,7 @@ finalScore = cosine * (1 + ln(1 + successes) - 0.5 * ln(1 + failures))
 
 ---
 
-## 8. Vector Store Compaction
+## 9. Vector Store Compaction
 
 **Priority:** P3 — maintenance optimization
 
@@ -281,6 +307,7 @@ finalScore = cosine * (1 + ln(1 + successes) - 0.5 * ln(1 + failures))
 | 1 | Incremental Append (O(1) writes) | 1 hour | Enables everything else | ✅ Done |
 | 1 | Auto-Learning from Successful Commands | 2 hours | Highest user-facing impact | ✅ Done |
 | 2 | Embedding Cache (LRU) | 1 hour | 200ms savings per repeated query | ✅ Done |
+| 2 | RAG Poisoning Fix (History Dedup + Source Boosting + Flush) | 2 hours | Fixes retrieval quality degradation | ✅ Done |
 | 2 | TTL / Staleness Eviction | 1 hour | Prevents unbounded growth | |
 | 3 | Adaptive Relevance Scoring | 2 hours | Retrieval quality improves over time | ✅ Done |
 | 3 | Contextual Re-ranking | 2 hours | Production-grade retrieval | |

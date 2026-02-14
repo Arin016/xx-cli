@@ -267,14 +267,14 @@ Then build the index:
 ```bash
 xx index
 # 🔍 Building knowledge index...
-#   ✓ 45 OS command entries
+#   ✓ 49 OS command entries
 #   ✓ 1 learned corrections
-#   ✓ 25 history entries
-# ✓ Indexed 71 documents total
-# Done in 1.6s
+#   ✓ 28 history entries (12 skipped as duplicates)
+# ✓ Indexed 78 documents total
+# Done in 1.1s
 ```
 
-Re-run `xx index` anytime to refresh (e.g., after teaching `xx` new corrections with `xx learn`, or after building up more command history).
+Re-run `xx index` anytime to refresh (e.g., after teaching `xx` new corrections with `xx learn`, or after building up more command history). Use `--flush` to wipe the existing index and rebuild from scratch — this is the fix for a poisoned index where bad auto-learned commands are dominating good results.
 
 > Without the index, `xx` still works — it just won't have the extra knowledge boost. The RAG pipeline fails silently if no index exists.
 
@@ -559,11 +559,20 @@ $ xx recap
 # Build the index (run once after install, re-run to refresh)
 xx index
 # 🔍 Building knowledge index...
-#   ✓ 45 OS command entries
+#   ✓ 49 OS command entries
 #   ✓ 1 learned corrections
-#   ✓ 25 history entries
-# ✓ Indexed 71 documents total
-# Done in 1.6s
+#   ✓ 28 history entries (12 skipped as duplicates)
+# ✓ Indexed 78 documents total
+# Done in 1.1s
+
+# Flush and rebuild from scratch (fixes poisoned indexes)
+xx index --flush
+# 🗑  Flushed existing index
+# 🔍 Building knowledge index...
+#   ✓ 49 OS command entries
+#   ✓ 1 learned corrections
+#   ✓ 11 history entries (29 skipped as duplicates)
+# ✓ Indexed 61 documents total
 ```
 
 Use `--verbose` to see what RAG retrieved for any query:
@@ -583,7 +592,7 @@ $ xx -v --dry-run how much RAM do I have
 
 Without RAG, the AI might suggest `free -h` (which doesn't exist on macOS). With RAG, it knows to use `sysctl hw.memsize`.
 
-The vector store is a compact binary file (~220KB for 71 docs) stored at `~/.xx-cli/vectors.bin`. No external database dependencies — everything is built from scratch using Ollama's `nomic-embed-text` model for embeddings and cosine similarity for search.
+The vector store is a compact binary file (~220KB for 78 docs) stored at `~/.xx-cli/vectors.bin`. No external database dependencies — everything is built from scratch using Ollama's `nomic-embed-text` model for embeddings and cosine similarity for search.
 
 The vector store also grows automatically through auto-learning: every time a command succeeds, `xx` spawns a detached background process that embeds the prompt+command pair and appends it to the store — but only if no near-duplicate already exists (cosine similarity > 0.95). This means the system gets smarter with every use, without you ever running `xx index` again. The background process has zero latency impact on the user.
 
@@ -684,6 +693,7 @@ xx learn --list
 
 # Build/refresh the RAG knowledge index
 xx index
+xx index --flush         # Wipe and rebuild from scratch
 
 # System health check
 xx doctor
@@ -766,7 +776,7 @@ xx-cli/
 │   ├── diffexplain.go             # Git diff → plain English summary
 │   ├── doctor.go                  # System health check (9 checks)
 │   ├── stats.go                   # Usage statistics dashboard
-│   ├── index.go                   # Build RAG knowledge index
+│   ├── index.go                   # Build RAG knowledge index (--flush support)
 │   ├── autolearn.go               # Hidden _learn subcommand for background auto-learning
 │   ├── config.go                  # Config subcommands
 │   └── history.go                 # History subcommand
@@ -793,8 +803,8 @@ xx-cli/
 │   │   └── learn.go               # Few-shot correction storage
 │   ├── rag/
 │   │   ├── embeddings.go          # Embedding client (Ollama nomic-embed-text API) with LRU cache
-│   │   ├── store.go               # Binary vector store v2: cosine search, adaptive scoring, O(1) append, dedup
-│   │   ├── indexer.go             # Indexes OS docs, learned corrections, command history
+│   │   ├── store.go               # Binary vector store v2: cosine search, adaptive scoring, O(1) append, dedup, flush
+│   │   ├── indexer.go             # Indexes OS docs, learned corrections, command history (with dedup against builtins)
 │   │   ├── rag.go                 # Top-level Retrieve() + LearnFromSuccess() + RecordFeedback()
 │   │   ├── rag_test.go            # 42 tests: cosine similarity, store ops, append, dedup, indexer, formatting
 │   │   └── rag_bench_test.go      # Benchmarks: search at 100/1K/10K docs, save/load, append, cosine similarity
@@ -834,7 +844,7 @@ xx-cli/
 - **Streaming responses** — All free-text AI output streams token-by-token via Ollama's NDJSON streaming API. Uses `StreamingProvider` interface with automatic fallback to `Complete()` for non-streaming providers. Replaces the spinner → wall-of-text pattern with real-time incremental output
 - **Structured observability** — Every command is instrumented with AI latency, execution latency, intent, and success/failure. `xx stats` renders a terminal dashboard with aggregated metrics, intent breakdown, and top commands
 - **System health check** — `xx doctor` runs 9 checks (binary, PATH, Ollama install, server connectivity, model availability, embedding model, shell wrapper, config dir, system info) with pass/fail/warn output. Same pattern as `brew doctor` and `flutter doctor`
-- **Local RAG pipeline** — Built from scratch with no external vector DB dependencies. Uses Ollama's `nomic-embed-text` model (768-dimensional vectors) for embeddings, a custom binary vector store with cosine similarity search, and category pre-filtering for hybrid retrieval. Indexes 3 knowledge sources: curated OS command docs (45 macOS / 6 Linux entries), user-taught corrections from `xx learn`, and successful command history. At query time, the top-5 most relevant documents (above 0.3 similarity threshold) are injected into the system prompt. The vector store is a compact binary file (~220KB) — no JSON overhead, no external dependencies. Use `xx -v` to see what RAG retrieved for any query
+- **Local RAG pipeline** — Built from scratch with no external vector DB dependencies. Uses Ollama's `nomic-embed-text` model (768-dimensional vectors) for embeddings, a custom binary vector store with cosine similarity search, and category pre-filtering for hybrid retrieval. Indexes 3 knowledge sources: curated OS command docs (49 macOS / 6 Linux entries), user-taught corrections from `xx learn`, and successful command history. History entries are deduped against builtins at index time — if a history entry is semantically similar to a curated builtin (cosine > 0.7), it's dropped to prevent auto-learned garbage from competing with curated knowledge. At query time, the top-5 most relevant documents (above 0.3 similarity threshold) are injected into the system prompt with source-based boosting (builtin 1.2x, learned 1.1x). The vector store is a compact binary file (~220KB) — no JSON overhead, no external dependencies. Use `xx -v` to see what RAG retrieved for any query. Use `xx index --flush` to wipe a poisoned index and rebuild from scratch
 - **Auto-learning (online learning)** — After every successful command, a detached background process embeds the prompt+command pair and appends it to the vector store via O(1) binary append. Semantic deduplication (cosine similarity > 0.95) prevents bloat. The background process is fully decoupled from the user's session — zero latency impact, and if it fails, nobody notices. This is the write-behind pattern: persist knowledge asynchronously after the user-facing operation completes
 - **Adaptive relevance scoring** — Each document in the vector store tracks a success count and failure count. After every command execution, a background process updates the score of the most relevant retrieved document. During search, the final score is `cosine * (1 + ln(1+successes) - 0.5*ln(1+failures))`. This is a lightweight bandit-style signal: reliable commands get boosted, unreliable ones get penalized. New documents start at neutral (1.0 multiplier). Log dampening prevents runaway scores. Same principle as Reddit's ranking algorithm
 - **Embedding cache (LRU)** — The embedding client maintains an in-memory LRU cache of 100 entries (~300KB). Repeated queries skip the Ollama API call entirely (0ms vs ~200ms). The cache uses exact string matching with LRU eviction — oldest entries are dropped when the cache is full. This is the same pattern used by DNS resolvers and CDN edge caches
