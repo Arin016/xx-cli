@@ -245,7 +245,14 @@ Rules:
 10. Use project context to pick the right tool (e.g. "run tests" -> "go test ./..." in a Go project, "npm test" in Node).
 11. Use git context (branch, diff, recent commits) to generate accurate git commands and meaningful commit messages.
 12. When the user wants to navigate/go to a directory by name, use: find ~ -maxdepth 5 -type d -iname "*<name>*" 2>/dev/null | head -10. Set intent to "display".
-13. Return valid JSON only. No extra text.%s`,
+13. Return valid JSON only. No extra text.
+14. CRITICAL: Only use commands that exist on the user's OS. On macOS/darwin:
+    - RAM/memory info: use "vm_stat" for memory pages, "sysctl hw.memsize" for total RAM, or "top -l 1 -s 0 | head -n 10" for a quick overview. NEVER use "free" (does not exist on macOS).
+    - CPU info: use "sysctl -n machdep.cpu.brand_string", NEVER "/proc/cpuinfo"
+    - Process list: use "ps aux", NEVER rely on /proc
+    - Package manager: use "brew", not "apt" or "yum"
+    - Open files/apps: use "open", not "xdg-open"
+    - Clipboard: use "pbcopy"/"pbpaste", not "xclip"%s`,
 		runtime.GOOS, runtime.GOARCH, detectShell(), projectContext, learn.FewShotPrompt())
 }
 
