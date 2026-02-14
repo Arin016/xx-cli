@@ -960,6 +960,3 @@ If you're running `xx` without the shell wrapper, `?` is a glob wildcard in zsh.
 | Team sharing | Export/import aliases and learned corrections. `xx sync` pushes config to a shared repo so your whole team benefits. |
 | Web dashboard | `xx dashboard` opens a local web UI showing command history, usage stats, most-used commands, and success/failure rates. |
 
-## License
-
-MIT — see [LICENSE](LICENSE) for details.
