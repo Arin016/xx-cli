@@ -62,7 +62,7 @@ func Retrieve(ctx context.Context, query string) (string, error) {
 // concise so the LLM can use it effectively.
 func formatContext(results []SearchResult) string {
 	var sb strings.Builder
-	sb.WriteString("\nRelevant knowledge (use this to pick the right command):\n")
+	sb.WriteString("\nRelevant knowledge (ALWAYS prefer [builtin] over [history] entries):\n")
 	for _, r := range results {
 		sb.WriteString(fmt.Sprintf("- [%s] %s\n", r.Doc.Source, r.Doc.Text))
 	}

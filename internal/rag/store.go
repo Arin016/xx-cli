@@ -12,6 +12,17 @@ import (
 )
 
 const storeFileName = "vectors.bin"
+// Flush deletes the vector store file from disk. This is the nuclear option
+// for fixing a poisoned index — wipe everything and rebuild from scratch
+// with `xx index`. Returns nil if the file doesn't exist (already clean).
+func (s *Store) Flush() error {
+	path := storePath()
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete vector store: %w", err)
+	}
+	s.docs = nil
+	return nil
+}
 
 // Document is a single entry in the vector store.
 // It holds the original text, its embedding vector, and metadata.
@@ -229,6 +240,17 @@ func (s *Store) Search(queryVec []float32, topK int, category string) []SearchRe
 
 		cosine := cosineSimilarity(queryVec, doc.Vector)
 		score := adaptiveScore(cosine, doc.SuccessCount, doc.FailureCount)
+
+		// Source boost: builtin entries are curated, high-quality knowledge.
+		// Give them a 20% edge so auto-learned garbage doesn't drown them out.
+		// Learned corrections get a 10% boost since the user explicitly taught them.
+		switch doc.Source {
+		case "builtin":
+			score *= 1.20
+		case "learned":
+			score *= 1.10
+		}
+
 		results = append(results, SearchResult{Doc: doc, Score: score})
 	}
 

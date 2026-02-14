@@ -266,7 +266,8 @@ Rules:
     - Process list: use "ps aux", NEVER rely on /proc
     - Package manager: use "brew", not "apt" or "yum"
     - Open files/apps: use "open", not "xdg-open"
-    - Clipboard: use "pbcopy"/"pbpaste", not "xclip"%s`,
+    - Clipboard: use "pbcopy"/"pbpaste", not "xclip"
+15. When "Relevant knowledge" is provided, ALWAYS prefer [builtin] entries over [history] entries. Builtin entries are curated and correct. History entries may contain bad commands that happened to succeed. If a builtin entry says "NEVER use X", obey it even if a history entry used X.%s`,
 		runtime.GOOS, runtime.GOARCH, detectShell(), projectContext, learn.FewShotPrompt())
 }
 

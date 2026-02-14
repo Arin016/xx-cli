@@ -50,15 +50,38 @@ func (idx *Indexer) IndexAll(ctx context.Context, progress func(msg string)) err
 	}
 
 	// 3. Index command history (successful commands only).
+	// History entries are deduped against builtins and learned corrections:
+	// if a history entry is semantically similar to an already-indexed entry,
+	// we skip it. This prevents auto-learned garbage from competing with
+	// curated knowledge — the core fix for RAG poisoning.
 	progress("Indexing command history...")
 	histDocs, err := historyDocs()
 	if err != nil {
 		progress(fmt.Sprintf("  ⚠ skipping history: %v", err))
 	} else if len(histDocs) > 0 {
-		if err := idx.embedDocs(ctx, histDocs, progress); err != nil {
-			return fmt.Errorf("failed to index history docs: %w", err)
+		var added int
+		for i := range histDocs {
+			vec, err := idx.embedder.Embed(ctx, histDocs[i].Text)
+			if err != nil {
+				return fmt.Errorf("failed to embed history doc: %w", err)
+			}
+			histDocs[i].Vector = vec
+
+			// Skip if this history entry overlaps with a builtin or learned entry.
+			// 0.7 threshold catches entries that cover the same topic as a builtin,
+			// even if the wording differs (e.g. "top processes by RAM" vs
+			// "ps aux | awk '{print $4}'"). Builtins are curated — they always win.
+			if idx.store.HasNearDuplicate(vec, 0.7) {
+				continue
+			}
+			idx.store.Add(histDocs[i])
+			added++
+
+			if (added)%50 == 0 {
+				progress(fmt.Sprintf("  embedded %d...", added))
+			}
 		}
-		progress(fmt.Sprintf("  ✓ %d history entries", len(histDocs)))
+		progress(fmt.Sprintf("  ✓ %d history entries (%d skipped as duplicates)", added, len(histDocs)-added))
 	} else {
 		progress("  ✓ no command history yet")
 	}
@@ -140,6 +163,10 @@ func macosCommandDocs() []Document {
 		{"kill a process on macOS: use 'pkill PROCESS_NAME' or 'kill PID'", "process"},
 		{"list all running processes: use 'ps aux' for detailed process list", "process"},
 		{"find process using a port: use 'lsof -i :PORT' then 'kill PID'", "process"},
+		{"top processes by RAM with names on macOS: use 'ps aux --sort=-%mem | head -10' to show process names, PID, and memory percentage together", "process"},
+		{"top processes by CPU with names on macOS: use 'ps aux --sort=-%cpu | head -10' to show process names, PID, and CPU percentage together", "process"},
+		{"what processes are using the most memory on macOS: use 'ps aux --sort=-%mem | head -10' — NEVER use 'ps aux | awk' to print only one column, always show full process info", "memory"},
+		{"NEVER use 'ps aux | awk {print $4}' to show memory — it strips process names. Always use 'ps aux --sort=-%mem | head -10' to show names alongside memory usage", "memory"},
 
 		// Package management
 		{"install software on macOS: use 'brew install PACKAGE' (Homebrew)", "packages"},
