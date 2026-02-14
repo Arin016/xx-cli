@@ -223,12 +223,38 @@ xx doctor
 # ✓ Ollama installed — ollama version is 0.15.0
 # ✓ Ollama server reachable
 # ✓ Model available (llama3.2:latest)
+# ✓ Embedding model (nomic-embed-text) — ready
 # ✓ Shell wrapper configured — zsh
 # ...
-# All 8 checks passed. You're good to go.
+# All 9 checks passed. You're good to go.
 ```
 
-## 17. Stats — Usage Dashboard
+## 17. Index — RAG Knowledge Base
+
+Build a local vector store that makes `xx` smarter about OS-specific commands:
+
+```bash
+# Build the index (one-time, re-run to refresh)
+xx index
+# 🔍 Building knowledge index...
+#   ✓ 45 OS command entries
+#   ✓ 1 learned corrections
+#   ✓ 25 history entries
+# ✓ Indexed 71 documents total
+# Done in 1.6s
+
+# See what RAG retrieved for a query
+xx -v --dry-run how much RAM do I have
+# 📚 RAG context:
+# - [builtin] how much total RAM on macOS: use 'sysctl hw.memsize'
+# - [history] 'how much RAM do i have' was successfully executed as: sysctl hw.memsize
+# ...
+# → sysctl hw.memsize
+```
+
+Without RAG, the AI might suggest `free -h` (doesn't exist on macOS). With RAG, it knows to use `sysctl hw.memsize`.
+
+## 18. Stats — Usage Dashboard
 
 ```bash
 xx stats
@@ -243,7 +269,7 @@ xx stats
 # 1. ps aux | grep chrome (8x)
 ```
 
-## 18. Flags
+## 19. Flags
 
 ```bash
 xx --dry-run delete all node_modules folders    # See command without running
@@ -251,7 +277,7 @@ xx --yolo show me disk usage                    # Skip confirmation
 xx -v is chrome running                         # Show the underlying command
 ```
 
-## 19. History & Config
+## 20. History & Config
 
 ```bash
 xx history                          # See past commands
@@ -279,8 +305,10 @@ For the best impression, run in this order:
 11. `xx diff-explain` — PR description from your git diff
 12. `xx watch is port 3000 in use` — live monitoring with alerts
 13. `xx recap` — AI-powered standup summary
-14. `xx doctor` — system health check (8 pass/fail checks)
-15. `xx stats` — usage dashboard with metrics
-16. `xx chat` → ask a few questions — conversational mode
-17. `xx --version` — version info
-18. `xx history` — shows everything you just did
+14. `xx index` — build the RAG knowledge index
+15. `xx -v --dry-run how much RAM do I have` — see RAG context + correct macOS command
+16. `xx doctor` — system health check (9 pass/fail checks)
+17. `xx stats` — usage dashboard with metrics
+18. `xx chat` → ask a few questions — conversational mode
+19. `xx --version` — version info
+20. `xx history` — shows everything you just did

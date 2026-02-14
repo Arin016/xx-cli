@@ -15,6 +15,7 @@ import (
 	"github.com/arin/xx-cli/internal/config"
 	projctx "github.com/arin/xx-cli/internal/context"
 	"github.com/arin/xx-cli/internal/learn"
+	"github.com/arin/xx-cli/internal/rag"
 )
 
 // Client orchestrates AI interactions. It builds prompts, parses responses,
@@ -40,8 +41,18 @@ func NewClientWithProvider(p Provider) *Client {
 // Translate converts a natural language prompt into a structured Result
 // containing the shell command, explanation, and intent classification.
 func (c *Client) Translate(ctx context.Context, prompt string) (*Result, error) {
+	// Retrieve relevant context from the RAG vector store.
+	// This injects knowledge like "on macOS use vm_stat for memory"
+	// so the LLM picks the right command. Fails silently if no index exists.
+	ragContext, _ := rag.Retrieve(ctx, prompt)
+
+	systemPrompt := buildSystemPrompt()
+	if ragContext != "" {
+		systemPrompt += ragContext
+	}
+
 	messages := []Message{
-		{Role: "system", Content: buildSystemPrompt()},
+		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: prompt},
 	}
 	rawText, err := c.provider.Complete(ctx, messages, true)
@@ -59,6 +70,9 @@ func (c *Client) Translate(ctx context.Context, prompt string) (*Result, error) 
 	if result.Command == "" && result.Intent != IntentWorkflow {
 		return nil, fmt.Errorf("AI returned an empty command")
 	}
+
+	// Attach RAG context for verbose/debug output.
+	result.RAGContext = ragContext
 
 	// Validate and normalize intent.
 	switch result.Intent {

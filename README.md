@@ -88,6 +88,14 @@ $ xx stage everything commit with a good message and push
            │
            ▼
 ┌──────────────────────┐
+│  RAG Pipeline        │
+│  Embed query → search│
+│  vector store → top 5│
+│  relevant docs       │
+└──────────┬───────────┘
+           │ context injected
+           ▼
+┌──────────────────────┐
 │   Ollama (local AI)  │
 │  Translates to shell │
 │  command + intent    │
@@ -244,7 +252,33 @@ source ~/.zshrc   # or source ~/.bashrc
 
 > Without the wrapper, `xx` still works perfectly for everything else — you just won't get automatic `cd` navigation.
 
-### Step 5: Verify everything works
+### Step 5: Build the Knowledge Index (recommended)
+
+The RAG (Retrieval-Augmented Generation) pipeline gives `xx` a local knowledge base of OS-specific commands, your learned corrections, and command history. This makes command suggestions significantly more accurate — e.g., using `vm_stat` instead of `free` on macOS.
+
+First, pull the embedding model (~274MB, one-time):
+
+```bash
+ollama pull nomic-embed-text
+```
+
+Then build the index:
+
+```bash
+xx index
+# 🔍 Building knowledge index...
+#   ✓ 45 OS command entries
+#   ✓ 1 learned corrections
+#   ✓ 25 history entries
+# ✓ Indexed 71 documents total
+# Done in 1.6s
+```
+
+Re-run `xx index` anytime to refresh (e.g., after teaching `xx` new corrections with `xx learn`, or after building up more command history).
+
+> Without the index, `xx` still works — it just won't have the extra knowledge boost. The RAG pipeline fails silently if no index exists.
+
+### Step 6: Verify everything works
 
 ```bash
 xx is ollama running
@@ -280,7 +314,7 @@ xx show me the top 10 largest files here
 xx find all .log files larger than 100mb
 ```
 
-> **Tip:** Avoid `?` in your prompt — zsh treats it as a wildcard. Write `xx is slack running` instead of `xx is slack running?`, or use quotes: `xx "is slack running?"`
+> **Tip:** The shell wrapper (`eval "$(xx init zsh)"`) includes `noglob`, so special characters like `?`, `*`, `[]` work out of the box. Without the wrapper, zsh treats `?` as a wildcard — use quotes in that case: `xx "is slack running?"`
 
 ### Explain Commands
 
@@ -517,6 +551,88 @@ $ xx recap
   • Debugged permission issues with node_modules
 ```
 
+### Index — Local RAG Knowledge Base
+
+`xx` includes a from-scratch RAG (Retrieval-Augmented Generation) pipeline that embeds OS command knowledge, your learned corrections, and command history into a local vector store. At query time, the most relevant documents are retrieved via cosine similarity and injected into the AI's prompt — so it picks the right command for your OS.
+
+```bash
+# Build the index (run once after install, re-run to refresh)
+xx index
+# 🔍 Building knowledge index...
+#   ✓ 45 OS command entries
+#   ✓ 1 learned corrections
+#   ✓ 25 history entries
+# ✓ Indexed 71 documents total
+# Done in 1.6s
+```
+
+Use `--verbose` to see what RAG retrieved for any query:
+
+```bash
+$ xx -v --dry-run how much RAM do I have
+
+  📚 RAG context:
+  - [builtin] how much total RAM on macOS: use 'sysctl hw.memsize'
+  - [history] 'how much RAM do i have' was successfully executed as: sysctl hw.memsize
+  - [builtin] CPU core count on macOS: use 'sysctl -n hw.ncpu'
+  ...
+
+  → sysctl hw.memsize
+  Get the total physical memory in bytes
+```
+
+Without RAG, the AI might suggest `free -h` (which doesn't exist on macOS). With RAG, it knows to use `sysctl hw.memsize`.
+
+The vector store is a compact binary file (~220KB for 71 docs) stored at `~/.xx-cli/vectors.bin`. No external database dependencies — everything is built from scratch using Ollama's `nomic-embed-text` model for embeddings and cosine similarity for search.
+
+### Doctor — System Health Check
+
+Run a comprehensive health check on your setup:
+
+```bash
+$ xx doctor
+
+  🩺 xx doctor
+
+  ✓ xx binary installed — /Users/you/go/bin/xx
+  ✓ $GOPATH/bin in PATH — /Users/you/go/bin
+  ✓ Ollama installed — ollama version is 0.15.0
+  ✓ Ollama server reachable — localhost:11434
+  ✓ Model available (llama3.2:latest) — ready
+  ✓ Embedding model (nomic-embed-text) — ready
+  ✓ Shell wrapper configured — zsh
+  ✓ Config directory — /Users/you/.xx-cli
+  ✓ System info — darwin/arm64
+
+  All 9 checks passed. You're good to go.
+```
+
+### Stats — Usage Dashboard
+
+See your usage metrics, AI performance, and command patterns:
+
+```bash
+$ xx stats
+
+  📊 xx stats
+
+  Commands:  47 total  (12 today, 47 this week)
+  Success:   89%
+  AI time:   1823ms avg
+  Exec time: 156ms avg
+
+  Intent Breakdown
+  query      ████████ 18 (38%)
+  display    ██████ 14 (30%)
+  execute    ████ 9 (19%)
+  workflow   ██ 6 (13%)
+
+  Top Commands
+  1. ps aux | grep chrome (8x)
+  2. df -h (5x)
+  3. go test ./... (4x)
+```
+
 ### Flags
 
 | Flag | Short | Description |
@@ -563,6 +679,15 @@ xx recap
 # Teach xx your preferred commands
 xx learn "run tests" "make test"
 xx learn --list
+
+# Build/refresh the RAG knowledge index
+xx index
+
+# System health check
+xx doctor
+
+# Usage statistics
+xx stats
 
 # Enable shell wrapper (add to ~/.zshrc)
 xx init zsh
@@ -614,6 +739,7 @@ ollama pull llama3.1:latest    # Pull a new model
 - **No sudo by default** — The AI never adds `sudo` unless you explicitly ask for it
 - **Safe destructive commands** — For operations like `rm` or `kill`, the AI prefers the safest variant
 - **cd via shell wrapper** — Directory navigation works through a shell function wrapper (`eval "$(xx init zsh)"`), using the same safe pattern as `zoxide` and `nvm`. Without the wrapper, `cd` commands are detected and shown as output
+- **noglob alias** — The shell wrapper includes `alias xx='noglob xx'` so special characters (`?`, `*`, `[]`, `#`) are passed through to `xx` instead of being interpreted by the shell as glob patterns
 - **Full history** — Every command is logged to `~/.xx-cli/history.json` for audit
 - **Pipe input limits** — Piped data is truncated to 4000 characters to prevent prompt injection and keep responses fast
 - **Workflow halt-on-failure** — Multi-step workflows stop immediately if any step fails, preventing cascading damage
@@ -636,11 +762,17 @@ xx-cli/
 │   ├── watch.go                   # Polling monitor with change alerts
 │   ├── learn.go                   # Teach xx preferred commands
 │   ├── diffexplain.go             # Git diff → plain English summary
+│   ├── doctor.go                  # System health check (9 checks)
+│   ├── stats.go                   # Usage statistics dashboard
+│   ├── index.go                   # Build RAG knowledge index
 │   ├── config.go                  # Config subcommands
 │   └── history.go                 # History subcommand
 ├── internal/
 │   ├── ai/
-│   │   ├── client.go              # Ollama API client, prompt engineering, workflow translation
+│   │   ├── client.go              # AI client, prompt engineering, RAG integration, streaming methods
+│   │   ├── provider.go            # Provider interface (pluggable backends)
+│   │   ├── ollama.go              # Ollama provider (HTTP + NDJSON streaming)
+│   │   ├── stream.go              # StreamingProvider interface, StreamDelta type
 │   │   └── types.go               # Intent constants, result types, Ollama request/response types
 │   ├── config/
 │   │   ├── config.go              # Config loading/saving
@@ -655,8 +787,17 @@ xx-cli/
 │   │   └── history.go             # Command history management
 │   ├── learn/
 │   │   └── learn.go               # Few-shot correction storage
+│   ├── rag/
+│   │   ├── embeddings.go          # Embedding client (Ollama nomic-embed-text API)
+│   │   ├── store.go               # Binary vector store with cosine similarity search
+│   │   ├── indexer.go             # Indexes OS docs, learned corrections, command history
+│   │   ├── rag.go                 # Top-level Retrieve() — query embedding + search + formatting
+│   │   └── rag_test.go            # 14 tests: cosine similarity, store ops, indexer, formatting
+│   ├── stats/
+│   │   └── stats.go               # Command metrics, aggregation, dashboard data
 │   └── ui/
-│       └── spinner.go             # Terminal spinner for loading states
+│       ├── spinner.go             # Terminal spinner for loading states
+│       └── stream.go              # Streaming token renderer
 ├── Makefile                       # Build, test, install targets
 ├── .goreleaser.yaml               # Cross-platform release config
 └── .gitignore
@@ -685,6 +826,10 @@ xx-cli/
 - **Error diagnosis** — `xx wtf` takes any error message and returns a structured diagnosis: what happened, why, and the exact fix command
 - **Diff explanation** — `xx diff-explain` reads your git diff and generates a human-readable summary, useful for PR descriptions and commit messages
 - **Watch mode** — `xx watch` translates a query once, then polls the resulting command at intervals, alerting on output changes with a terminal bell
+- **Streaming responses** — All free-text AI output streams token-by-token via Ollama's NDJSON streaming API. Uses `StreamingProvider` interface with automatic fallback to `Complete()` for non-streaming providers. Replaces the spinner → wall-of-text pattern with real-time incremental output
+- **Structured observability** — Every command is instrumented with AI latency, execution latency, intent, and success/failure. `xx stats` renders a terminal dashboard with aggregated metrics, intent breakdown, and top commands
+- **System health check** — `xx doctor` runs 9 checks (binary, PATH, Ollama install, server connectivity, model availability, embedding model, shell wrapper, config dir, system info) with pass/fail/warn output. Same pattern as `brew doctor` and `flutter doctor`
+- **Local RAG pipeline** — Built from scratch with no external vector DB dependencies. Uses Ollama's `nomic-embed-text` model (768-dimensional vectors) for embeddings, a custom binary vector store with cosine similarity search, and category pre-filtering for hybrid retrieval. Indexes 3 knowledge sources: curated OS command docs (45 macOS / 6 Linux entries), user-taught corrections from `xx learn`, and successful command history. At query time, the top-5 most relevant documents (above 0.3 similarity threshold) are injected into the system prompt. The vector store is a compact binary file (~220KB) — no JSON overhead, no external dependencies. Use `xx -v` to see what RAG retrieved for any query
 
 ## Development
 
@@ -754,7 +899,9 @@ It uses a shell wrapper function. When you run `eval "$(xx init zsh)"`, it insta
 
 ### Why does `xx is slack running?` fail?
 
-The `?` character is a glob wildcard in zsh. Either drop it (`xx is slack running`) or quote your prompt (`xx "is slack running?"`).
+If you have the [shell wrapper](#step-4-enable-shell-wrapper-recommended) installed, it won't — the wrapper includes `noglob` which disables glob expansion for `xx`, so `?`, `*`, `[]`, and other special characters are passed through as-is. Just make sure to reload your shell after updating (`source ~/.zshrc`).
+
+If you're running `xx` without the shell wrapper, `?` is a glob wildcard in zsh. Either drop it (`xx is slack running`) or quote your prompt (`xx "is slack running?"`).
 
 ## Tech Stack
 
@@ -764,19 +911,12 @@ The `?` character is a glob wildcard in zsh. Either drop it (`xx is slack runnin
 | CLI Framework | [Cobra](https://github.com/spf13/cobra) | Industry standard (kubectl, Hugo, GitHub CLI) |
 | AI Backend | [Ollama](https://ollama.com) | Free, local, private, fast |
 | Default Model | Llama 3.2 | Good balance of speed and accuracy for command translation |
+| Embedding Model | nomic-embed-text | 768-dim vectors, runs locally via Ollama, powers the RAG pipeline |
 | Terminal Colors | [fatih/color](https://github.com/fatih/color) | Cross-platform terminal coloring |
 | Spinner | [briandowns/spinner](https://github.com/briandowns/spinner) | Smooth loading animations |
 | Releases | [GoReleaser](https://goreleaser.com) | Cross-platform binary builds |
 
 ## Roadmap
-
-### In Progress
-
-| Feature | Description |
-|---|---|
-| Streaming responses | Stream tokens from Ollama as they arrive instead of blocking until completion. Chunked HTTP parsing, incremental JSON extraction, real-time terminal output. Touches concurrent I/O, buffered readers, and live UX. |
-| `xx stats` | Structured observability for every command: AI call latency, execution time, success/failure rate, most-used intents. `xx stats` renders a terminal dashboard. Instruments the tool itself with the same rigor you'd apply to a production service. |
-| `xx doctor` | System health check: is Ollama running, is the model pulled, is the shell wrapper installed, is PATH configured, disk space, memory. Outputs a clean pass/fail checklist. The same pattern used by Homebrew, Flutter, and Rails. |
 
 ### Planned
 

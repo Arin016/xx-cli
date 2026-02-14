@@ -16,6 +16,7 @@ type Result struct {
 	Explanation string   `json:"explanation"`
 	Intent      string   `json:"intent"`
 	Steps       []Step   `json:"steps,omitempty"` // Populated when intent is "workflow".
+	RAGContext  string   `json:"-"`               // Injected RAG knowledge (not from JSON, for debug/verbose output).
 }
 
 // Step is a single command in a multi-step workflow.

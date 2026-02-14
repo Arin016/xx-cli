@@ -114,7 +114,19 @@ PATH configuration, and system resources.`,
 			return "", fmt.Errorf("model not found — run: ollama pull %s", cfg.Model)
 		})
 
-		// 6. Shell wrapper
+		// 6. Embedding model (for RAG)
+		check("Embedding model (nomic-embed-text)", func() (string, error) {
+			out, err := exec.Command("ollama", "list").CombinedOutput()
+			if err != nil {
+				return "", fmt.Errorf("warn:could not list models")
+			}
+			if strings.Contains(string(out), "nomic-embed-text") {
+				return "ready", nil
+			}
+			return "", fmt.Errorf("warn:not found — run: ollama pull nomic-embed-text (needed for 'xx index')")
+		})
+
+		// 7. Shell wrapper
 		check("Shell wrapper configured", func() (string, error) {
 			shell := detectDoctorShell()
 			home, _ := os.UserHomeDir()
@@ -139,7 +151,7 @@ PATH configuration, and system resources.`,
 			return "", fmt.Errorf("warn:add to %s: eval \"$(xx init %s)\"", rcFile, shell)
 		})
 
-		// 7. Config directory
+		// 8. Config directory
 		check("Config directory", func() (string, error) {
 			dir := config.Dir()
 			info, err := os.Stat(dir)
@@ -152,7 +164,7 @@ PATH configuration, and system resources.`,
 			return dir, nil
 		})
 
-		// 8. OS and arch
+		// 9. OS and arch
 		check("System info", func() (string, error) {
 			return fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH), nil
 		})

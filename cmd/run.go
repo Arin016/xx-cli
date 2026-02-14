@@ -60,6 +60,15 @@ func run(cmd *cobra.Command, args []string) error {
 	cyan := color.New(color.FgCyan, color.Bold)
 	dim := color.New(color.FgHiBlack)
 
+	// Show RAG context when verbose — lets you see what knowledge was injected.
+	if verbose && result.RAGContext != "" {
+		magenta := color.New(color.FgMagenta)
+		magenta.Fprintf(os.Stderr, "\n  📚 RAG context:\n")
+		for _, line := range strings.Split(strings.TrimSpace(result.RAGContext), "\n") {
+			dim.Fprintf(os.Stderr, "  %s\n", line)
+		}
+	}
+
 	showCommand := verbose || dryRun || result.Intent == ai.IntentExecute
 	if result.Intent == ai.IntentWorkflow && len(result.Steps) > 0 {
 		// Show the full workflow plan.

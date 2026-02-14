@@ -49,6 +49,7 @@ func init() {
 	rootCmd.AddCommand(diffExplainCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(statsCmd)
+	rootCmd.AddCommand(indexCmd)
 }
 
 // Execute is the entry point called from main.
