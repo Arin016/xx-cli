@@ -23,8 +23,10 @@ Add this to your shell config:
 		}
 
 		switch shell {
-		case "zsh", "bash":
-			fmt.Print(bashZshWrapper())
+		case "zsh":
+			fmt.Print(zshWrapper())
+		case "bash":
+			fmt.Print(bashWrapper())
 		case "fish":
 			fmt.Print(fishWrapper())
 		default:
@@ -34,10 +36,8 @@ Add this to your shell config:
 	},
 }
 
-func bashZshWrapper() string {
-	return `# xx shell wrapper — enables directory navigation
-xx() {
-    local xx_bin
+func shellCoreWrapper() string {
+	return `    local xx_bin
     xx_bin="$(command which xx-cli 2>/dev/null || command which xx 2>/dev/null)"
     if [ -z "$xx_bin" ]; then
         echo "xx: binary not found in PATH" >&2
@@ -67,7 +67,29 @@ xx() {
         echo "$output"
     fi
 
-    return $exit_code
+    return $exit_code`
+}
+
+func zshWrapper() string {
+	return `# xx shell wrapper — enables directory navigation and special character handling
+xx() {
+` + shellCoreWrapper() + `
+}
+
+# Disable glob expansion for xx so ?, *, [] etc. are passed as-is.
+# This lets you type: xx is slack running?  (without quoting)
+alias xx='noglob xx'
+`
+}
+
+func bashWrapper() string {
+	return `# xx shell wrapper — enables directory navigation and special character handling
+xx() {
+    # Disable glob expansion so ?, *, [] etc. are passed as-is
+    local _old_opts="$(shopt -po noglob 2>/dev/null)"
+    set -f
+    trap 'eval "$_old_opts"' RETURN 2>/dev/null || true
+` + shellCoreWrapper() + `
 }
 `
 }
